@@ -490,8 +490,12 @@ async function openFloorPlan(viewId: string): Promise<void> {
   console.log("📐 Abrindo planta:", viewId, view);
 
   // Fecha vista anterior se houver
-  if (currentViewId) {
-    views.close(currentViewId);
+  if (currentViewId && views.list.has(currentViewId)) {
+    try {
+      views.close(currentViewId);
+    } catch (error) {
+      console.warn("Erro ao fechar vista anterior:", error);
+    }
   }
 
   // Configura a vista
@@ -534,7 +538,13 @@ async function openFloorPlan(viewId: string): Promise<void> {
 async function closePlantView(): Promise<void> {
   if (!currentViewId) return;
 
-  views.close(currentViewId);
+  if (views.list.has(currentViewId)) {
+    try {
+      views.close(currentViewId);
+    } catch (error) {
+      console.warn("Erro ao fechar vista de planta:", error);
+    }
+  }
   currentViewId = null;
 
   // Mostra o grid novamente

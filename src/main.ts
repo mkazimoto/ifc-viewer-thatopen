@@ -25,7 +25,8 @@ world.scene.three.background = new THREE.Color(0xf0f0f0);
 world.renderer = new OBCF.PostproductionRenderer(components, container);
 world.camera = new OBC.OrthoPerspectiveCamera(components);
 
-await world.camera.controls.setLookAt(50, 30, 50, 0, 0, 0);
+// Posição inicial da câmera (será ajustada quando o modelo for carregado)
+await world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0);
 
 components.init();
 
@@ -60,8 +61,25 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
   world.scene.three.add(model.object);
   fragments.core.update(true);
   
-  // Ajusta câmera para enquadrar o modelo
-  world.camera.controls.fitToSphere(model.object, true);
+  // Aguarda alguns frames para garantir que a geometria foi processada
+  await new Promise(resolve => {
+    let frameCount = 0;
+    const waitFrames = () => {
+      frameCount++;
+      if (frameCount < 3) {
+        requestAnimationFrame(waitFrames);
+      } else {
+        resolve(void 0);
+      }
+    };
+    requestAnimationFrame(waitFrames);
+  });
+  
+  // Enquadra automaticamente o modelo na câmera
+  frameModel(model);
+  
+  // Atualiza a lista de modelos na interface
+  updateModelsList();
   
   // Gera automaticamente as plantas de andares e processa filtros
   setTimeout(async () => {
@@ -69,6 +87,11 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
     await processClassifications();
     await hideIfcSpaces();
   }, 500); // Pequeno delay para garantir que o modelo foi processado
+});
+
+// Quando um modelo é removido, atualiza a lista
+fragments.list.onItemDeleted.add(() => {
+  updateModelsList();
 });
 
 // Remove z-fighting
@@ -349,12 +372,157 @@ async function clearModels(): Promise<void> {
     fragments.list.delete(id);
   }
   
+  // Limpa o estado de visibilidade dos modelos
+  modelVisibilityState.clear();
+  
+  // Atualiza a lista de modelos na interface
+  updateModelsList();
+  
   // Reinicializa o fragments se necessário
   if (!fragments.core) {
     fragments.init(workerObjectUrl);
   }
   
   console.log("Modelos removidos.");
+}
+
+// ==========================================
+// 📋 Funções de gerenciamento de modelos
+// ==========================================
+
+// Variável para manter o estado de visibilidade de cada modelo
+const modelVisibilityState = new Map<string, boolean>();
+
+function updateModelsList(): void {
+  const modelsList = document.getElementById("models-list");
+  if (!modelsList) return;
+  
+  const modelEntries = Array.from(fragments.list.entries());
+  
+  if (modelEntries.length === 0) {
+    modelsList.innerHTML = '<span class="filter-empty">Nenhum modelo carregado</span>';
+    return;
+  }
+  
+  modelsList.innerHTML = '';
+  
+  modelEntries.forEach(([modelId, _model], index) => {
+    const isVisible = modelVisibilityState.get(modelId) !== false; // Por padrão é visível
+    const displayName = modelId || `Modelo ${index + 1}`;
+    
+    const modelItem = document.createElement("div");
+    modelItem.className = "filter-item";
+    modelItem.innerHTML = `
+      <label class="filter-label">
+        <input 
+          type="checkbox" 
+          id="model-chk-${index}" 
+          ${isVisible ? 'checked' : ''}>
+        <span class="filter-text">${displayName}</span>
+      </label>
+    `;
+    
+    const checkbox = modelItem.querySelector('input') as HTMLInputElement;
+    checkbox.addEventListener('change', () => {
+      toggleModelVisibility(modelId, checkbox.checked);
+    });
+    
+    modelsList.appendChild(modelItem);
+  });
+}
+
+function toggleModelVisibility(modelId: string, visible: boolean): void {
+  const model = fragments.list.get(modelId);
+  
+  if (model) {
+    model.object.visible = visible;
+    modelVisibilityState.set(modelId, visible);
+    console.log(`Modelo ${modelId} ${visible ? 'mostrado' : 'ocultado'}`);
+  }
+}
+
+function showAllModels(): void {
+  const modelEntries = Array.from(fragments.list.entries());
+  modelEntries.forEach(([modelId, model], index) => {
+    model.object.visible = true;
+    modelVisibilityState.set(modelId, true);
+    
+    // Atualiza checkbox
+    const checkbox = document.getElementById(`model-chk-${index}`) as HTMLInputElement;
+    if (checkbox) checkbox.checked = true;
+  });
+  console.log("Todos os modelos mostrados");
+}
+
+function hideAllModels(): void {
+  const modelEntries = Array.from(fragments.list.entries());
+  modelEntries.forEach(([modelId, model], index) => {
+    model.object.visible = false;
+    modelVisibilityState.set(modelId, false);
+    
+    // Atualiza checkbox
+    const checkbox = document.getElementById(`model-chk-${index}`) as HTMLInputElement;
+    if (checkbox) checkbox.checked = false;
+  });
+  console.log("Todos os modelos ocultados");
+}
+
+// Tipagem do modelo de fragmentos
+type FragmentsModelType = ReturnType<typeof fragments.list.values> extends IterableIterator<infer T> ? T : never;
+
+function frameModel(model: FragmentsModelType): void {
+  try {
+    const box = new THREE.Box3().setFromObject(model.object);
+    
+    // Verifica se o modelo tem dimensões válidas
+    if (box.isEmpty()) {
+      console.warn("Modelo sem dimensões válidas para enquadramento");
+      return;
+    }
+    
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    
+    // Verifica se as dimensões são muito pequenas ou muito grandes
+    if (size.length() < 0.1 || size.length() > 10000) {
+      console.warn("Dimensões do modelo fora do intervalo esperado:", size.length());
+      // Usa fitToSphere como fallback
+      world.camera.controls.fitToSphere(model.object, true);
+      return;
+    }
+    
+    const maxDim = Math.max(size.x, size.y, size.z);
+    
+    // Calcula uma distância adequada baseada no tamanho do modelo
+    const distance = maxDim * 1.8;
+    
+    // Posiciona a câmera em um ângulo isométrico otimizado
+    const offset = new THREE.Vector3(
+      distance * 0.6,  // X: posição diagonal
+      distance * 0.4,  // Y: altura
+      distance * 0.8   // Z: profundidade
+    );
+    
+    const cameraPosition = center.clone().add(offset);
+    
+    // Move a câmera suavemente para a nova posição
+    world.camera.controls.setLookAt(
+      cameraPosition.x, 
+      cameraPosition.y, 
+      cameraPosition.z,
+      center.x,
+      center.y, 
+      center.z,
+      true // animação suave
+    );
+    
+    console.log(`Modelo enquadrado - Centro: ${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)} | Tamanho: ${size.x.toFixed(2)}x${size.y.toFixed(2)}x${size.z.toFixed(2)}`);
+    
+  } catch (error) {
+    console.error("Erro ao enquadrar modelo:", error);
+    // Fallback para método padrão
+    world.camera.controls.fitToSphere(model.object, true);
+  }
 }
 
 // ==========================================
@@ -920,7 +1088,7 @@ function createPanel(): BUI.Panel {
   panel.className = "options-menu";
 
   panel.innerHTML = `
-    <bim-panel-section label="📁 Carregar Modelo">
+    <bim-panel-section label="📋 Modelos" collapsed>
       <bim-label>Selecione um arquivo IFC:</bim-label>
       
       <input 
@@ -929,6 +1097,14 @@ function createPanel(): BUI.Panel {
         accept=".ifc" 
         style="margin-top: 8px; color: white;"
       />
+
+       <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+        <bim-button id="show-all-models" label="Mostrar Todos" icon="mdi:eye" style="flex:1"></bim-button>
+        <bim-button id="hide-all-models" label="Ocultar Todos" icon="mdi:eye-off" style="flex:1"></bim-button>
+      </div>
+      <div id="models-list" class="filter-container">
+        <span class="filter-empty">Nenhum modelo carregado</span>
+      </div>
 
       <bim-button 
         id="clear-btn"
@@ -954,6 +1130,12 @@ function createPanel(): BUI.Panel {
         id="reset-camera-btn"
         label="Reset Câmera" 
         icon="mdi:camera-retake">
+      </bim-button>
+      
+      <bim-button 
+        id="frame-model-btn"
+        label="Enquadrar Modelo" 
+        icon="mdi:fit-to-page-outline">
       </bim-button>
     </bim-panel-section>
 
@@ -1041,9 +1223,30 @@ function createPanel(): BUI.Panel {
   panel.querySelector("#file-input")?.addEventListener("change", onFileInput);
   panel.querySelector("#perspective-btn")?.addEventListener("click", () => world.camera.projection.set("Perspective"));
   panel.querySelector("#orthographic-btn")?.addEventListener("click", () => world.camera.projection.set("Orthographic"));
-  panel.querySelector("#reset-camera-btn")?.addEventListener("click", () => world.camera.controls.setLookAt(50, 30, 50, 0, 0, 0, true));
+  panel.querySelector("#reset-camera-btn")?.addEventListener("click", () => {
+    // Se há um modelo carregado, enquadra ele automaticamente
+    const models = Array.from(fragments.list.values());
+    if (models.length > 0) {
+      frameModel(models[0]); // Usa o primeiro modelo
+    } else {
+      // Se não há modelo, volta para a posição padrão
+      world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0, true);
+    }
+  });
   panel.querySelector("#download-btn")?.addEventListener("click", downloadFragments);
   panel.querySelector("#clear-btn")?.addEventListener("click", clearModels);
+  
+  // Event listeners para gerenciamento de modelos
+  panel.querySelector("#frame-model-btn")?.addEventListener("click", () => {
+    const models = Array.from(fragments.list.values());
+    if (models.length > 0) {
+      frameModel(models[0]);
+    } else {
+      alert("Nenhum modelo carregado para enquadrar.");
+    }
+  });
+  panel.querySelector("#show-all-models")?.addEventListener("click", () => showAllModels());
+  panel.querySelector("#hide-all-models")?.addEventListener("click", () => hideAllModels());
 
   // Event listeners para planos de corte
   // (Removido toggleClippingBtn)

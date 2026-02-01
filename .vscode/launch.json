@@ -1,0 +1,37 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Chrome (Vite)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}",
+      "sourceMapPathOverrides": {
+        "webpack:///./~/*": "${workspaceFolder}/node_modules/*",
+        "webpack:///./*": "${workspaceFolder}/*",
+        "webpack:///*": "*"
+      }
+    },
+    {
+      "name": "Debug Edge (Vite)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}",
+      "sourceMapPathOverrides": {
+        "webpack:///./~/*": "${workspaceFolder}/node_modules/*",
+        "webpack:///./*": "${workspaceFolder}/*",
+        "webpack:///*": "*"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug with Vite (Chrome)",
+      "configurations": ["Debug Chrome (Vite)"],
+      "preLaunchTask": "vite:dev",
+      "stopAll": true
+    }
+  ]
+}

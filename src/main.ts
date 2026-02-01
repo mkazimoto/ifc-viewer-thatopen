@@ -1129,6 +1129,20 @@ highlighter.events.select.onHighlight.add((data) => {
       
       infoHtml += `<br><strong>Modelo:</strong> ${modelId}<br>`;
       infoHtml += `<strong>Express IDs:</strong> ${expressIds.join(", ")}`;
+      
+      // Centraliza a rotação da câmera no objeto selecionado
+      const model = fragments.list.get(modelId);
+      if (model && model.object) {
+        // Calcula o centro do bounding box de todos os objetos do modelo
+        const bbox = new THREE.Box3().setFromObject(model.object);
+        
+        // Centraliza o target da câmera no centro do bounding box
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
+        world.camera.controls.setTarget(center.x, center.y, center.z, true);
+        
+        console.log("🎯 Câmera centralizada no modelo:", center);
+      }
     }
     
     selectionInfo.innerHTML = infoHtml;

@@ -34,6 +34,7 @@ const grids = components.get(OBC.Grids);
 const grid = grids.create(world);
 grid.material.uniforms.uColor.value = new THREE.Color(0x444466);
 
+
 // ==========================================
 // 📦 Configuração do FragmentsManager
 // ==========================================
@@ -66,6 +67,7 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
   setTimeout(async () => {
     await generateFloorPlans();
     await processClassifications();
+    await hideIfcSpaces();
   }, 500); // Pequeno delay para garantir que o modelo foi processado
 });
 
@@ -590,6 +592,35 @@ async function processClassifications(): Promise<void> {
   updateFilterUI();
 }
 
+// Oculta automaticamente elementos IfcSpace
+async function hideIfcSpaces(): Promise<void> {
+  const [model] = fragments.list.values();
+  if (!model) return;
+
+  const categories = classifier.list.get("Categories");
+  if (!categories) return;
+
+  // Procura por IfcSpace nas categorias
+  for (const [categoryName, groupData] of categories) {
+    if (categoryName.toLowerCase().includes("ifcspace")) {
+      console.log("🚫 Ocultando elementos IfcSpace...");
+      
+      const itemsMap = await groupData.get();
+      for (const expressIds of Object.values(itemsMap)) {
+        const ids = Array.isArray(expressIds) ? expressIds : Array.from(expressIds as Set<number>);
+        model.setVisible(ids, false);
+      }
+      
+      // Atualiza o estado do filtro para refletir que está desmarcado
+      filterState.categories.set(categoryName, false);
+    }
+  }
+
+  // Atualiza a UI e renderização
+  updateFilterUI();
+  fragments.core.update(true);
+}
+
 // Atualiza a interface de filtros
 function updateFilterUI(): void {
   const storeyContainer = document.querySelector("#storey-filters") as HTMLElement;
@@ -898,9 +929,15 @@ function createPanel(): BUI.Panel {
         accept=".ifc" 
         style="margin-top: 8px; color: white;"
       />
+
+      <bim-button 
+        id="clear-btn"
+        label="Limpar Modelos" 
+        icon="mdi:delete">
+      </bim-button>
     </bim-panel-section>
 
-    <bim-panel-section label="📷 Câmera">
+    <bim-panel-section label="📷 Câmera" collapsed>
       <bim-button 
         id="perspective-btn"
         label="Perspectiva" 
@@ -920,7 +957,7 @@ function createPanel(): BUI.Panel {
       </bim-button>
     </bim-panel-section>
 
-    <bim-panel-section label="🏢 Plantas de Andares">
+    <bim-panel-section label="🏢 Plantas de Andares" collapsed>
       <bim-label>Selecione um andar:</bim-label>
       
       <select 
@@ -957,7 +994,7 @@ function createPanel(): BUI.Panel {
       </div>
     </bim-panel-section>
 
-    <bim-panel-section label="✂️ Planos de Corte">
+    <bim-panel-section label="✂️ Planos de Corte" collapsed>
       <bim-button 
         id="create-box-btn"
         label="Criar Caixa de Corte" 
@@ -984,7 +1021,7 @@ function createPanel(): BUI.Panel {
       </bim-label>
     </bim-panel-section>
 
-    <bim-panel-section label="🔧 Ações">
+    <bim-panel-section label="🔧 Ações" collapsed>
       <bim-button 
         id="download-btn"
         label="Baixar Fragments" 
@@ -998,13 +1035,6 @@ function createPanel(): BUI.Panel {
       </bim-button>
     </bim-panel-section>
 
-    <bim-panel-section label="ℹ️ Instruções" collapsed>
-      <bim-label>1. Clique em "Carregar Exemplo" ou escolha um arquivo .ifc</bim-label>
-      <bim-label>2. Use o mouse para navegar:</bim-label>
-      <bim-label>• Botão esquerdo: Rotacionar</bim-label>
-      <bim-label>• Botão direito: Pan</bim-label>
-      <bim-label>• Scroll: Zoom</bim-label>
-    </bim-panel-section>
   `;
 
   // Adiciona event listeners
@@ -1052,6 +1082,24 @@ function createPanel(): BUI.Panel {
 
 const panel = createPanel();
 document.body.append(panel);
+
+// Comportamento de accordion - apenas uma seção aberta por vez
+const panelSections = panel.querySelectorAll("bim-panel-section");
+panelSections.forEach((section) => {
+  section.addEventListener("click", (e) => {
+    const target = e.currentTarget as BUI.PanelSection;
+    
+    // Se a seção clicada está sendo aberta (não tem o atributo collapsed)
+    if (!target.hasAttribute("collapsed")) {
+      // Fecha todas as outras seções
+      panelSections.forEach((otherSection) => {
+        if (otherSection !== target && !otherSection.hasAttribute("collapsed")) {
+          otherSection.setAttribute("collapsed", "");
+        }
+      });
+    }
+  });
+});
 
 // Botão para toggle do menu em mobile
 const menuButton = document.createElement("bim-button") as BUI.Button;

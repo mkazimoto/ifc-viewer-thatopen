@@ -93,7 +93,7 @@ ifcLoader.onIfcImporterInitialized.add((importer) => {
 await ifcLoader.setup({
   autoSetWasm: false,
   wasm: {
-    path: "/",
+    path: "./",
     absolute: false,
   },
 });
@@ -805,12 +805,6 @@ async function createClippingBox(): Promise<void> {
     world.scene.three.remove(clippingBoxHelper);
     clippingBoxHelper = null;
   }
-
-  // Cria um Box3 com a margem para visualização
-  const visualBox = new THREE.Box3(
-    new THREE.Vector3(box.min.x - margin, box.min.y - margin, box.min.z - margin),
-    new THREE.Vector3(box.max.x + margin, box.max.y + margin, box.max.z + margin)
-  );
 
   // Cria um mesh temporário para o BoxHelper
   const boxGeometry = new THREE.BoxGeometry(

@@ -1138,12 +1138,99 @@ clipper.size = 5;
 // Estado do modo de criação de plano
 let clippingMode = false;
 
-// Double-click para criar/deletar plano de corte
+// Double-click para criar plano de corte OU enquadrar objeto selecionado
 container.addEventListener("dblclick", async () => {
   if (clippingMode) {
+    // No modo de plano de corte, cria um novo plano
     await clipper.create(world);
+  } else {
+    // Fora do modo de corte, tenta enquadrar o objeto sob o cursor
+    await frameObjectUnderCursor();
   }
 });
+
+// Função para enquadrar o objeto sob o cursor ao dar duplo clique
+async function frameObjectUnderCursor(): Promise<void> {
+  try {
+    const casters = components.get(OBC.Raycasters);
+    const caster = casters.get(world);
+    const result = await caster.castRay() as unknown as {
+      fragments: { modelId: string; localIds: Set<number> };
+      object: THREE.Mesh;
+      point: THREE.Vector3;
+    } | null;
+
+    if (!result || !result.fragments) {
+      console.log("❌ Nenhum objeto sob o cursor para enquadrar");
+      return;
+    }
+
+    const { modelId } = result.fragments;
+    const model = fragments.list.get(modelId);
+    
+    if (!model || !model.object.visible) {
+      console.log("❌ Modelo não encontrado ou invisível");
+      return;
+    }
+
+    // Calcula a bounding box do objeto intersectado
+    const bbox = new THREE.Box3();
+    
+    if (result.object && result.object.geometry) {
+      // Usa a geometria do objeto intersectado
+      result.object.geometry.computeBoundingBox();
+      const geomBox = result.object.geometry.boundingBox;
+      if (geomBox) {
+        bbox.copy(geomBox).applyMatrix4(result.object.matrixWorld);
+      }
+    }
+
+    if (bbox.isEmpty()) {
+      // Fallback: usa o ponto de interseção como centro com tamanho padrão
+      if (result.point) {
+        const defaultSize = 2;
+        bbox.setFromCenterAndSize(
+          result.point,
+          new THREE.Vector3(defaultSize, defaultSize, defaultSize)
+        );
+      } else {
+        console.log("❌ Não foi possível calcular o bounding box do objeto");
+        return;
+      }
+    }
+
+    // Calcula centro e tamanho do objeto
+    const center = bbox.getCenter(new THREE.Vector3());
+    const size = bbox.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    
+    // Distância da câmera baseada no tamanho do objeto
+    const distance = Math.max(maxDim * 2.5, 3); // Mínimo de 3 unidades
+    
+    // Mantém a direção atual da câmera, mas aproxima do objeto
+    const currentPosition = new THREE.Vector3();
+    world.camera.three.getWorldPosition(currentPosition);
+    
+    const direction = currentPosition.clone().sub(center).normalize();
+    const newPosition = center.clone().add(direction.multiplyScalar(distance));
+    
+    // Move a câmera suavemente para enquadrar o objeto
+    await world.camera.controls.setLookAt(
+      newPosition.x,
+      newPosition.y,
+      newPosition.z,
+      center.x,
+      center.y,
+      center.z,
+      true // animação suave
+    );
+
+    console.log(`🎯 Objeto enquadrado - Centro: (${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}) | Tamanho: ${maxDim.toFixed(2)}m`);
+    
+  } catch (error) {
+    console.error("Erro ao enquadrar objeto:", error);
+  }
+}
 
 // Tecla Delete para remover plano de corte
 window.addEventListener("keydown", async (e) => {

@@ -1422,11 +1422,6 @@ function createPanel(): BUI.Panel {
         icon="mdi:square-outline">
       </bim-button>
       
-      <bim-button 
-        id="reset-camera-btn"
-        label="Reset Câmera" 
-        icon="mdi:camera-retake">
-      </bim-button>
       
       <bim-button 
         id="frame-model-btn"
@@ -1676,6 +1671,192 @@ document.body.append(stats.dom);
 
 world.renderer.onBeforeUpdate.add(() => stats.begin());
 world.renderer.onAfterUpdate.add(() => stats.end());
+
+// ==========================================
+// 🎲 ViewCube - Cubo de Visualização
+// ==========================================
+
+function createViewCube() {
+  // Container do ViewCube
+  const viewCubeContainer = document.createElement("div");
+  viewCubeContainer.id = "viewcube-container";
+  viewCubeContainer.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 340px;
+    width: 120px;
+    height: 120px;
+    z-index: 999;
+    pointer-events: auto;
+  `;
+  document.body.appendChild(viewCubeContainer);
+
+  // Cria cena separada para o ViewCube
+  const cubeScene = new THREE.Scene();
+  const cubeCamera = new THREE.OrthographicCamera(-1.5, 1.5, 1.5, -1.5, 0.1, 100);
+  cubeCamera.position.set(3, 3, 3);
+  cubeCamera.lookAt(0, 0, 0);
+
+  // Renderer separado para o ViewCube
+  const cubeRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  cubeRenderer.setSize(120, 120);
+  cubeRenderer.setPixelRatio(window.devicePixelRatio);
+  cubeRenderer.setClearColor(0x000000, 0);
+  viewCubeContainer.appendChild(cubeRenderer.domElement);
+  cubeRenderer.domElement.style.cursor = "pointer";
+
+  // Materiais para cada face do cubo
+  const faceColors = {
+    front: 0x4a90d9,    // Azul
+    back: 0x4a90d9,
+    top: 0x7cb342,      // Verde
+    bottom: 0x7cb342,
+    right: 0xe57373,    // Vermelho
+    left: 0xe57373
+  };
+
+  // Cria texturas com labels para cada face
+  function createFaceTexture(text: string, bgColor: number): THREE.CanvasTexture {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    
+    // Background
+    ctx.fillStyle = `#${bgColor.toString(16).padStart(6, "0")}`;
+    ctx.fillRect(0, 0, 128, 128);
+    
+    // Borda
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, 124, 124);
+    
+    // Texto
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 24px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 64, 64);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  // Cria os materiais com texturas
+  const materials = [
+    new THREE.MeshBasicMaterial({ map: createFaceTexture("DIR", faceColors.right) }),   // +X (Direita)
+    new THREE.MeshBasicMaterial({ map: createFaceTexture("ESQ", faceColors.left) }),    // -X (Esquerda)
+    new THREE.MeshBasicMaterial({ map: createFaceTexture("TOPO", faceColors.top) }),    // +Y (Topo)
+    new THREE.MeshBasicMaterial({ map: createFaceTexture("BASE", faceColors.bottom) }), // -Y (Base)
+    new THREE.MeshBasicMaterial({ map: createFaceTexture("FRENTE", faceColors.front) }),// +Z (Frente)
+    new THREE.MeshBasicMaterial({ map: createFaceTexture("TRÁS", faceColors.back) })    // -Z (Trás)
+  ];
+
+  // Geometria do cubo
+  const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+  const cube = new THREE.Mesh(geometry, materials);
+  cubeScene.add(cube);
+
+  // Adiciona eixos de referência
+  const axesHelper = new THREE.AxesHelper(1.2);
+  cubeScene.add(axesHelper);
+
+  // Raycaster para detectar cliques
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  // Função para obter a distância atual da câmera ao target
+  function getCameraDistance(): number {
+    const position = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    world.camera.controls.getPosition(position);
+    world.camera.controls.getTarget(target);
+    return position.distanceTo(target);
+  }
+
+  // Função para mover a câmera principal para uma vista específica
+  function setCameraView(direction: THREE.Vector3) {
+    const target = new THREE.Vector3();
+    world.camera.controls.getTarget(target);
+    
+    const distance = getCameraDistance();
+    const newPosition = target.clone().add(direction.multiplyScalar(distance));
+    
+    world.camera.controls.setLookAt(
+      newPosition.x, newPosition.y, newPosition.z,
+      target.x, target.y, target.z,
+      true
+    );
+  }
+
+  // Vistas predefinidas
+  const views: { [key: string]: THREE.Vector3 } = {
+    front: new THREE.Vector3(0, 0, 1),
+    back: new THREE.Vector3(0, 0, -1),
+    top: new THREE.Vector3(0, 1, 0.001), // Pequeno offset para evitar problemas de up vector
+    bottom: new THREE.Vector3(0, -1, 0.001),
+    right: new THREE.Vector3(1, 0, 0),
+    left: new THREE.Vector3(-1, 0, 0),
+    iso: new THREE.Vector3(1, 1, 1).normalize()
+  };
+
+  // Handler de clique no cubo
+  cubeRenderer.domElement.addEventListener("click", (event) => {
+    const rect = cubeRenderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, cubeCamera);
+    const intersects = raycaster.intersectObject(cube);
+
+    if (intersects.length > 0) {
+      const faceIndex = intersects[0].face!.materialIndex;
+      
+      switch (faceIndex) {
+        case 0: setCameraView(views.right.clone()); break;  // Direita
+        case 1: setCameraView(views.left.clone()); break;   // Esquerda
+        case 2: setCameraView(views.top.clone()); break;    // Topo
+        case 3: setCameraView(views.bottom.clone()); break; // Base
+        case 4: setCameraView(views.front.clone()); break;  // Frente
+        case 5: setCameraView(views.back.clone()); break;   // Trás
+      }
+    }
+  });
+
+  // Duplo clique para vista isométrica
+  cubeRenderer.domElement.addEventListener("dblclick", () => {
+    setCameraView(views.iso.clone());
+  });
+
+  // Atualiza a rotação do ViewCube para sincronizar com a câmera principal
+  function updateViewCube() {
+    const cameraPosition = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    world.camera.controls.getPosition(cameraPosition);
+    world.camera.controls.getTarget(target);
+
+    // Calcula a direção da câmera
+    const direction = cameraPosition.clone().sub(target).normalize();
+    
+    // Posiciona a câmera do ViewCube na mesma direção relativa
+    cubeCamera.position.copy(direction.multiplyScalar(5));
+    cubeCamera.lookAt(0, 0, 0);
+    
+    cubeRenderer.render(cubeScene, cubeCamera);
+  }
+
+  // Atualiza o ViewCube a cada frame
+  world.renderer?.onAfterUpdate.add(() => updateViewCube());
+
+  // Render inicial
+  updateViewCube();
+  
+  console.log("🎲 ViewCube criado com sucesso");
+}
+
+// Inicializa o ViewCube
+createViewCube();
 
 // ==========================================
 // 🖱️ Highlighter - Seleção ao clicar

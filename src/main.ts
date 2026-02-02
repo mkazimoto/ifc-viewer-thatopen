@@ -81,6 +81,9 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
   // Ajusta o modelo ao nível 0 (remove offset de coordenadas)
   await adjustModelToLevel0(model);
   
+  // Força atualização da matriz do objeto após ajuste de posição
+  model.object.updateMatrixWorld(true);
+  
   // Enquadra automaticamente o modelo na câmera
   frameModel(model);
   
@@ -900,16 +903,30 @@ async function openFloorPlan(viewId: string): Promise<void> {
   if (model) {
     const box = new THREE.Box3().setFromObject(model.object);
     const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    
+    // Calcula a distância necessária para enquadrar o modelo (vista de cima)
+    const maxDim = Math.max(size.x, size.z);
+    const distance = maxDim * 1.2; // Margem de 20%
     
     // Posiciona a câmera de cima olhando para baixo
     await world.camera.controls.setLookAt(
-      center.x, center.y + 100, center.z,  // Posição da câmera (de cima)
-      center.x, center.y, center.z,        // Alvo (centro do modelo)
+      center.x, center.y + distance, center.z,  // Posição da câmera (de cima)
+      center.x, center.y, center.z,              // Alvo (centro do modelo)
       true
     );
-
-    // Aplica rotação para a planta aparecer correta
-    await world.camera.controls.rotate(-0.3, 0, true);
+    
+    // Ajusta o zoom para enquadrar o modelo
+    await world.camera.controls.fitToBox(box, true, {
+      paddingTop: 20,
+      paddingBottom: 20,
+      paddingLeft: 20,
+      paddingRight: 20
+    });
+    
+    // Desabilita rotação na vista de planta (apenas pan e zoom)
+    world.camera.controls.minPolarAngle = 0;
+    world.camera.controls.maxPolarAngle = 0;
   }
 }
 
@@ -931,7 +948,18 @@ async function closePlantView(): Promise<void> {
 
   // Reseta a câmera para 3D
   world.camera.projection.set("Perspective");
-  world.camera.controls.setLookAt(50, 30, 50, 0, 0, 0, true);
+  
+  // Restaura a rotação livre da câmera
+  world.camera.controls.minPolarAngle = 0;
+  world.camera.controls.maxPolarAngle = Math.PI;
+  
+  // Enquadra o modelo se existir
+  const models = Array.from(fragments.list.values());
+  if (models.length > 0) {
+    frameModel(models[0]);
+  } else {
+    world.camera.controls.setLookAt(50, 30, 50, 0, 0, 0, true);
+  }
 
   // Atualiza o dropdown
   const dropdown = document.querySelector("#floor-dropdown") as HTMLSelectElement;

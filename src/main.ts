@@ -42,6 +42,9 @@ grid.material.uniforms.uColor.value = new THREE.Color(0x444466);
 
 const fragments = components.get(OBC.FragmentsManager);
 
+// Tipagem do modelo de fragmentos
+type FragmentsModelType = ReturnType<typeof fragments.list.values> extends IterableIterator<infer T> ? T : never;
+
 // Carrega o worker para processamento de fragmentos
 const workerUrl = "https://thatopen.github.io/engine_fragment/resources/worker.mjs";
 const fetchedWorker = await fetch(workerUrl);
@@ -75,6 +78,9 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
     requestAnimationFrame(waitFrames);
   });
   
+  // Ajusta o modelo ao nível 0 (remove offset de coordenadas)
+  await adjustModelToLevel0(model);
+  
   // Enquadra automaticamente o modelo na câmera
   frameModel(model);
   
@@ -86,8 +92,68 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
     await generateFloorPlans();
     await processClassifications();
     await hideIfcSpaces();
+    await updateStoreyData(); // Atualiza dados para o seletor de nível da grade
   }, 500); // Pequeno delay para garantir que o modelo foi processado
 });
+
+// Função para ajustar o modelo ao nível 0 padrão
+async function adjustModelToLevel0(model: FragmentsModelType): Promise<void> {
+  try {
+    // Obtém as coordenadas de origem do modelo IFC
+    const [, coordHeight] = await model.getCoordinates();
+    
+    // Obtém os andares do modelo
+    const storeys = await model.getItemsOfCategories([/BUILDINGSTOREY/]);
+    const localIds = Object.values(storeys).flat();
+    
+    if (localIds.length === 0) {
+      console.log("📍 Nenhum andar encontrado, modelo mantido na posição original");
+      return;
+    }
+    
+    const data = await model.getItemsData(localIds);
+    
+    // Encontra o andar com menor elevação (térreo/nível 0)
+    let minElevation = Infinity;
+    let groundFloorName = "";
+    
+    for (const attributes of data) {
+      if ("Elevation" in attributes && 
+          attributes.Elevation && 
+          typeof attributes.Elevation === "object" && 
+          "value" in attributes.Elevation) {
+        const elevation = (attributes.Elevation as { value: number }).value;
+        if (elevation < minElevation) {
+          minElevation = elevation;
+          if ("Name" in attributes && 
+              attributes.Name && 
+              typeof attributes.Name === "object" && 
+              "value" in attributes.Name) {
+            groundFloorName = (attributes.Name as { value: string }).value;
+          }
+        }
+      }
+    }
+    
+    if (minElevation !== Infinity) {
+      // Calcula o offset total (coordenadas + elevação do térreo)
+      const totalOffset = coordHeight + minElevation;
+      
+      // Move o modelo para que o térreo fique em Y=0
+      model.object.position.y = -totalOffset;
+      
+      // Armazena o offset de elevação base para uso no seletor de nível da grade
+      baseElevationOffset = minElevation;
+      
+      console.log(`📍 Modelo ajustado ao nível 0:`);
+      console.log(`   Andar base: "${groundFloorName}" (elevação: ${minElevation.toFixed(2)}m)`);
+      console.log(`   Offset de coordenadas: ${coordHeight.toFixed(2)}m`);
+      console.log(`   Ajuste aplicado: Y = ${(-totalOffset).toFixed(2)}m`);
+    }
+  } catch (error) {
+    console.warn("Não foi possível ajustar o modelo ao nível 0:", error);
+  }
+}
 
 // Quando um modelo é removido, atualiza a lista
 fragments.list.onItemDeleted.add(() => {
@@ -467,9 +533,6 @@ function hideAllModels(): void {
   console.log("Todos os modelos ocultados");
 }
 
-// Tipagem do modelo de fragmentos
-type FragmentsModelType = ReturnType<typeof fragments.list.values> extends IterableIterator<infer T> ? T : never;
-
 function frameModel(model: FragmentsModelType): void {
   try {
     const box = new THREE.Box3().setFromObject(model.object);
@@ -544,6 +607,12 @@ const classifier = components.get(OBC.Classifier);
 // Lista de vistas de andares disponíveis
 let floorViews: OBC.View[] = [];
 let currentViewId: string | null = null;
+
+// Dados dos andares para o seletor de nível da grade
+let storeyData: Record<string, unknown>[] = [];
+
+// Armazena o offset de elevação base aplicado (para ajustar ao nível 0)
+let baseElevationOffset = 0;
 
 // Função para gerar plantas dos andares
 async function generateFloorPlans(): Promise<void> {
@@ -641,6 +710,110 @@ function updateFloorDropdown(): void {
     option.textContent = view.id;
     dropdown.appendChild(option);
   }
+}
+
+// Função para obter a elevação de um andar pelo nome (considerando o ajuste ao nível 0)
+function getStoreyElevation(name: string): number {
+  const storey = storeyData.find((attributes) => {
+    if (!("Name" in attributes && attributes.Name && typeof attributes.Name === "object" && "value" in attributes.Name)) return false;
+    return (attributes.Name as { value: string }).value === name;
+  });
+  
+  if (!storey) return 0;
+  if (!("Elevation" in storey && storey.Elevation && typeof storey.Elevation === "object" && "value" in storey.Elevation)) return 0;
+  
+  const storeyElevation = (storey.Elevation as { value: number }).value;
+  
+  // Retorna a elevação relativa ao nível 0 (subtraindo o offset de elevação base)
+  return storeyElevation - baseElevationOffset;
+}
+
+// Função para atualizar os dados dos andares (para o seletor de nível da grade)
+async function updateStoreyData(): Promise<void> {
+  const models = Array.from(fragments.list.values());
+  
+  if (models.length === 0) {
+    storeyData = [];
+    updateGridLevelDropdown();
+    return;
+  }
+
+  try {
+    // Combina os andares de todos os modelos carregados
+    const allStoreyData: Record<string, unknown>[] = [];
+    const seenNames = new Set<string>();
+    
+    for (const model of models) {
+      const storeys = await model.getItemsOfCategories([/BUILDINGSTOREY/]);
+      const localIds = Object.values(storeys).flat();
+      const data = await model.getItemsData(localIds);
+      
+      // Adiciona andares únicos (evita duplicatas por nome)
+      for (const attributes of data) {
+        if ("Name" in attributes && 
+            attributes.Name && 
+            typeof attributes.Name === "object" && 
+            "value" in attributes.Name) {
+          const name = (attributes.Name as { value: string }).value;
+          if (!seenNames.has(name)) {
+            seenNames.add(name);
+            allStoreyData.push(attributes);
+          }
+        }
+      }
+    }
+    
+    // Ordena por elevação (do menor para o maior)
+    allStoreyData.sort((a, b) => {
+      const elevA = ("Elevation" in a && a.Elevation && typeof a.Elevation === "object" && "value" in a.Elevation)
+        ? (a.Elevation as { value: number }).value : 0;
+      const elevB = ("Elevation" in b && b.Elevation && typeof b.Elevation === "object" && "value" in b.Elevation)
+        ? (b.Elevation as { value: number }).value : 0;
+      return elevA - elevB;
+    });
+    
+    storeyData = allStoreyData;
+    console.log("📊 Dados dos andares carregados:", storeyData.length, "andares de", models.length, "modelo(s)");
+    updateGridLevelDropdown();
+  } catch (error) {
+    console.warn("Erro ao obter dados dos andares:", error);
+    storeyData = [];
+    updateGridLevelDropdown();
+  }
+}
+
+// Função para atualizar o dropdown de nível da grade
+function updateGridLevelDropdown(): void {
+  const dropdown = document.querySelector("#grid-level-dropdown") as HTMLSelectElement;
+  if (!dropdown) return;
+
+  dropdown.innerHTML = '<option value="">-- Nível Padrão (0) --</option>';
+  
+  for (const attributes of storeyData) {
+    if ("Name" in attributes && attributes.Name && typeof attributes.Name === "object" && "value" in attributes.Name) {
+      const name = (attributes.Name as { value: string }).value;
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      dropdown.appendChild(option);
+    }
+  }
+}
+
+// Função para alterar o nível da grade
+function onGridLevelChange(e: Event): void {
+  const target = e.target as HTMLSelectElement;
+  const level = target.value;
+  
+  if (!level) {
+    grid.three.position.y = 0;
+    console.log("📍 Grade movida para nível padrão (Y = 0)");
+    return;
+  }
+  
+  const elevation = getStoreyElevation(level);
+  grid.three.position.y = elevation;
+  console.log(`📍 Grade movida para nível "${level}" (Y = ${elevation.toFixed(2)}m)`);
 }
 
 // Abre uma vista de planta específica
@@ -1156,7 +1329,31 @@ function createPanel(): BUI.Panel {
       </bim-button>
     </bim-panel-section>
 
-    <bim-panel-section label="🔍 Filtro por Andar" collapsed>
+    <bim-panel-section label="� Nível da Grade" collapsed>
+      <bim-label>Mover grade para um nível:</bim-label>
+      
+      <select 
+        id="grid-level-dropdown"
+        style="width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; background: #2a2a4a; color: white; border: 1px solid #444;">
+        <option value="">-- Nível Padrão (0) --</option>
+      </select>
+      
+      <bim-checkbox 
+        id="grid-visible-checkbox"
+        label="Grade visível" 
+        checked
+        style="margin-top: 8px">
+      </bim-checkbox>
+      
+      <bim-color-input 
+        id="grid-color-input"
+        label="Cor da grade" 
+        color="#444466"
+        style="margin-top: 8px">
+      </bim-color-input>
+    </bim-panel-section>
+
+    <bim-panel-section label="�🔍 Filtro por Andar" collapsed>
       <div style="display: flex; gap: 8px; margin-bottom: 8px;">
         <bim-button id="select-all-storeys" label="Todos" icon="mdi:check-all" style="flex:1"></bim-button>
         <bim-button id="deselect-all-storeys" label="Nenhum" icon="mdi:close" style="flex:1"></bim-button>
@@ -1280,6 +1477,19 @@ function createPanel(): BUI.Panel {
   panel.querySelector("#select-all-categories")?.addEventListener("click", () => toggleAllFilters("category", true));
   panel.querySelector("#deselect-all-categories")?.addEventListener("click", () => toggleAllFilters("category", false));
 
+  // Event listeners para o seletor de nível da grade
+  panel.querySelector("#grid-level-dropdown")?.addEventListener("change", onGridLevelChange);
+  
+  const gridVisibleCheckbox = panel.querySelector("#grid-visible-checkbox") as BUI.Checkbox;
+  gridVisibleCheckbox?.addEventListener("change", () => {
+    grid.config.visible = gridVisibleCheckbox.checked;
+  });
+  
+  const gridColorInput = panel.querySelector("#grid-color-input") as BUI.ColorInput;
+  gridColorInput?.addEventListener("input", () => {
+    grid.config.color = new THREE.Color(gridColorInput.color);
+  });
+
   return panel;
 }
 
@@ -1369,12 +1579,23 @@ document.body.appendChild(selectionInfo);
 highlighter.events.select.onHighlight.add((data) => {
   console.log("✅ Selecionado:", data);
   
-  // Extrai os IDs dos objetos selecionados
-  const modelIds = Object.keys(data);
-  if (modelIds.length > 0) {
+  // Filtra modelos invisíveis
+  const visibleModelIds = Object.keys(data).filter(modelId => {
+    const model = fragments.list.get(modelId);
+    return model && model.object.visible;
+  });
+  
+  // Se o modelo selecionado está invisível, ignora e limpa a seleção
+  if (visibleModelIds.length === 0) {
+    highlighter.clear("select");
+    return;
+  }
+  
+  // Extrai os IDs dos objetos selecionados (apenas de modelos visíveis)
+  if (visibleModelIds.length > 0) {
     let infoHtml = "<strong>🎯 Objeto Selecionado</strong><br>";
     
-    for (const modelId of modelIds) {
+    for (const modelId of visibleModelIds) {
       const elementIds = data[modelId];
       const expressIds = Array.from(elementIds);
       
@@ -1426,6 +1647,45 @@ hoverer.material = new THREE.MeshBasicMaterial({
   opacity: 0.5,
   depthTest: false,
 });
+
+// Intercepta o hover para ignorar modelos invisíveis
+let lastHoveredModel: string | null = null;
+
+// Sobrescreve o método hover do hoverer para filtrar modelos invisíveis
+const originalHover = hoverer.hover.bind(hoverer);
+hoverer.hover = async function() {
+  if (!hoverer.enabled) return;
+  if (!hoverer.world) return;
+
+  const casters = components.get(OBC.Raycasters);
+  const caster = casters.get(hoverer.world);
+  const result = await caster.castRay() as unknown as {
+    fragments: { modelId: string };
+    localId: number;
+  } | null;
+
+  if (!result) {
+    lastHoveredModel = null;
+    return originalHover();
+  }
+
+  // Verifica se o modelo está visível
+  const modelId = result.fragments?.modelId;
+  if (modelId) {
+    const model = fragments.list.get(modelId);
+    if (!model || !model.object.visible) {
+      // Modelo invisível, não faz hover
+      if (lastHoveredModel) {
+        lastHoveredModel = null;
+        hoverer.onHoverEnded.trigger();
+      }
+      return;
+    }
+  }
+
+  lastHoveredModel = modelId;
+  return originalHover();
+};
 
 // Eventos de hover
 hoverer.onHoverStarted.add(() => {

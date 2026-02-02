@@ -1581,10 +1581,14 @@ document.body.appendChild(selectionInfo);
 function formatPropertyValue(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "object" && "value" in (value as Record<string, unknown>)) {
-    return String((value as Record<string, unknown>).value);
+    const innerValue = (value as Record<string, unknown>).value;
+    if (typeof innerValue === "number") {
+      return innerValue.toFixed(2).replace(/\.00$/, "");
+    }
+    return String(innerValue);
   }
   if (typeof value === "boolean") return value ? "Sim" : "Não";
-  if (typeof value === "number") return value.toFixed(4).replace(/\.?0+$/, "");
+  if (typeof value === "number") return value.toFixed(2).replace(/\.00$/, "");
   return String(value);
 }
 
@@ -1667,17 +1671,32 @@ async function displayElementProperties(modelId: string, expressIds: number[]): 
             
             // Encontra o valor (pode ser NominalValue, Value, AreaValue, LengthValue, etc.)
             let propValue = "—";
-            const valueKeys = ["NominalValue", "Value", "AreaValue", "LengthValue", "VolumeValue", "CountValue", "WeightValue", "TimeValue"];
-            for (const vk of valueKeys) {
+            let unit = "";
+            const valueKeysWithUnits: Record<string, string> = {
+              "LengthValue": "m",
+              "AreaValue": "m²",
+              "VolumeValue": "m³",
+              "WeightValue": "kg",
+              "TimeValue": "s",
+              "CountValue": "",
+              "NominalValue": "",
+              "Value": ""
+            };
+            
+            for (const vk of Object.keys(valueKeysWithUnits)) {
               if (prop[vk]) {
                 propValue = formatPropertyValue(prop[vk]);
+                unit = valueKeysWithUnits[vk];
                 break;
               }
             }
 
+            // Formata o valor com unidade se aplicável
+            const displayValue = unit ? `${propValue} ${unit}` : propValue;
+
             html += `<div style="display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">`;
             html += `<span style="color: #ccc;">${propName}</span>`;
-            html += `<span style="color: #fff; font-weight: 500; max-width: 200px; text-align: right; word-break: break-word;">${propValue}</span>`;
+            html += `<span style="color: #fff; font-weight: 500; max-width: 200px; text-align: right; word-break: break-word;">${displayValue}</span>`;
             html += `</div>`;
           }
         }

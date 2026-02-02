@@ -452,6 +452,42 @@ async function clearModels(): Promise<void> {
   console.log("Modelos removidos.");
 }
 
+// Função para tirar screenshot/foto da cena 3D
+function takeScreenshot(): void {
+  try {
+    // Força um render antes de capturar
+    world.renderer?.update();
+    
+    // Obtém o canvas do renderer
+    const canvas = world.renderer?.three.domElement;
+    if (!canvas) {
+      alert("Não foi possível capturar a tela: renderer não encontrado.");
+      return;
+    }
+    
+    // Converte o canvas para data URL (imagem PNG)
+    const dataURL = canvas.toDataURL("image/png", 1.0);
+    
+    // Cria um link para download
+    const link = document.createElement("a");
+    link.href = dataURL;
+    
+    // Gera nome do arquivo com timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    link.download = `screenshot-${timestamp}.png`;
+    
+    // Dispara o download
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    console.log("📸 Screenshot salvo:", link.download);
+  } catch (error) {
+    console.error("Erro ao capturar screenshot:", error);
+    alert("Erro ao tirar foto. Verifique o console para mais detalhes.");
+  }
+}
+
 // ==========================================
 // 📋 Funções de gerenciamento de modelos
 // ==========================================
@@ -1397,6 +1433,12 @@ function createPanel(): BUI.Panel {
         label="Enquadrar Modelo" 
         icon="mdi:fit-to-page-outline">
       </bim-button>
+      
+      <bim-button 
+        id="screenshot-btn"
+        label="Tirar Foto" 
+        icon="mdi:camera">
+      </bim-button>
     </bim-panel-section>
 
     <bim-panel-section label="🏢 Plantas de Andares" collapsed>
@@ -1529,6 +1571,12 @@ function createPanel(): BUI.Panel {
       alert("Nenhum modelo carregado para enquadrar.");
     }
   });
+  
+  // Event listener para tirar foto/screenshot
+  panel.querySelector("#screenshot-btn")?.addEventListener("click", () => {
+    takeScreenshot();
+  });
+  
   panel.querySelector("#show-all-models")?.addEventListener("click", () => showAllModels());
   panel.querySelector("#hide-all-models")?.addEventListener("click", () => hideAllModels());
 

@@ -1562,21 +1562,143 @@ selectionInfo.style.cssText = `
   position: fixed;
   bottom: 20px;
   left: 20px;
-  background: rgba(26, 35, 126, 0.9);
+  width: 350px;
+  background: rgba(26, 35, 126, 0.95);
   color: white;
-  padding: 12px 16px;
+  padding: 16px 20px;
   border-radius: 8px;
-  font-family: monospace;
-  font-size: 14px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 13px;
   z-index: 1000;
   display: none;
-  max-width: 400px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  max-height: 60vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
 `;
 document.body.appendChild(selectionInfo);
 
+// Função para formatar valor de propriedade
+function formatPropertyValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "object" && "value" in (value as Record<string, unknown>)) {
+    return String((value as Record<string, unknown>).value);
+  }
+  if (typeof value === "boolean") return value ? "Sim" : "Não";
+  if (typeof value === "number") return value.toFixed(4).replace(/\.?0+$/, "");
+  return String(value);
+}
+
+// Função para buscar e exibir propriedades do elemento
+async function displayElementProperties(modelId: string, expressIds: number[]): Promise<string> {
+  const model = fragments.list.get(modelId);
+  if (!model) return "";
+
+  try {
+    // Busca os dados do elemento com suas relações (PropertySets)
+    const itemsData = await model.getItemsData(expressIds, {
+      relations: {
+        IsDefinedBy: { attributes: true, relations: true },
+        IsTypedBy: { attributes: true, relations: false },
+        HasPropertySets: { attributes: true, relations: true },
+      },
+    });
+
+    let html = "";
+
+    for (const item of itemsData) {
+      // Informações básicas do elemento
+      const category = item._category && "value" in item._category ? item._category.value : "Desconhecido";
+      const name = item.Name && "value" in item.Name ? item.Name.value : "Sem nome";
+      const globalId = item.GlobalId && "value" in item.GlobalId ? item.GlobalId.value : "";
+
+      html += `<div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.2);">`;
+      html += `<div style="font-size: 16px; font-weight: bold; color: #bcf124; margin-bottom: 4px;">${name}</div>`;
+      html += `<div style="font-size: 11px; color: #aaa;">${category}</div>`;
+      if (globalId) html += `<div style="font-size: 10px; color: #888; font-family: monospace;">${globalId}</div>`;
+      html += `</div>`;
+
+      // PropertySets
+      const propertySets: Record<string, unknown>[] = [];
+
+      // Coleta PropertySets de IsDefinedBy
+      if (Array.isArray(item.IsDefinedBy)) {
+        for (const definition of item.IsDefinedBy) {
+          if (definition && "value" in definition._category) {
+            const defCategory = definition._category.value;
+            if (defCategory === "IFCPROPERTYSET" || defCategory === "IFCELEMENTQUANTITY") {
+              propertySets.push(definition);
+            }
+          }
+        }
+      }
+
+      // Coleta PropertySets do Type
+      if (Array.isArray(item.IsTypedBy)) {
+        for (const type of item.IsTypedBy) {
+          if (type && Array.isArray(type.HasPropertySets)) {
+            for (const pset of type.HasPropertySets) {
+              if (pset && "value" in pset._category) {
+                propertySets.push(pset);
+              }
+            }
+          }
+        }
+      }
+
+      // Exibe cada PropertySet
+      for (const pset of propertySets) {
+        const psetName = pset.Name && "value" in (pset.Name as Record<string, unknown>) 
+          ? (pset.Name as Record<string, unknown>).value 
+          : "PropertySet";
+        
+        html += `<div style="margin-bottom: 10px;">`;
+        html += `<div style="font-weight: bold; color: #81d4fa; font-size: 12px; margin-bottom: 6px; cursor: pointer;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">📁 ${psetName}</div>`;
+        html += `<div style="padding-left: 12px; font-size: 11px;">`;
+
+        // Propriedades
+        const propsKey = Array.isArray(pset.HasProperties) ? "HasProperties" : 
+                         Array.isArray(pset.Quantities) ? "Quantities" : null;
+        
+        if (propsKey && Array.isArray(pset[propsKey])) {
+          for (const prop of pset[propsKey] as Record<string, unknown>[]) {
+            const propName = prop.Name && "value" in (prop.Name as Record<string, unknown>) 
+              ? (prop.Name as Record<string, unknown>).value 
+              : "Propriedade";
+            
+            // Encontra o valor (pode ser NominalValue, Value, AreaValue, LengthValue, etc.)
+            let propValue = "—";
+            const valueKeys = ["NominalValue", "Value", "AreaValue", "LengthValue", "VolumeValue", "CountValue", "WeightValue", "TimeValue"];
+            for (const vk of valueKeys) {
+              if (prop[vk]) {
+                propValue = formatPropertyValue(prop[vk]);
+                break;
+              }
+            }
+
+            html += `<div style="display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">`;
+            html += `<span style="color: #ccc;">${propName}</span>`;
+            html += `<span style="color: #fff; font-weight: 500; max-width: 200px; text-align: right; word-break: break-word;">${propValue}</span>`;
+            html += `</div>`;
+          }
+        }
+
+        html += `</div></div>`;
+      }
+
+      if (propertySets.length === 0) {
+        html += `<div style="color: #888; font-style: italic;">Nenhum PropertySet encontrado</div>`;
+      }
+    }
+
+    return html;
+  } catch (error) {
+    console.error("Erro ao buscar propriedades:", error);
+    return `<div style="color: #ff6b6b;">Erro ao carregar propriedades</div>`;
+  }
+}
+
 // Evento quando um objeto é selecionado ao clicar
-highlighter.events.select.onHighlight.add((data) => {
+highlighter.events.select.onHighlight.add(async (data) => {
   console.log("✅ Selecionado:", data);
   
   // Filtra modelos invisíveis
@@ -1591,35 +1713,41 @@ highlighter.events.select.onHighlight.add((data) => {
     return;
   }
   
+  // Mostra loading
+  selectionInfo.innerHTML = `<div style="text-align: center; padding: 20px;">
+    <div style="color: #bcf124;">🔄 Carregando propriedades...</div>
+  </div>`;
+  selectionInfo.style.display = "block";
+  
   // Extrai os IDs dos objetos selecionados (apenas de modelos visíveis)
-  if (visibleModelIds.length > 0) {
-    let infoHtml = "<strong>🎯 Objeto Selecionado</strong><br>";
+  let fullHtml = "";
+  
+  for (const modelId of visibleModelIds) {
+    const elementIds = data[modelId];
+    const expressIds = Array.from(elementIds);
     
-    for (const modelId of visibleModelIds) {
-      const elementIds = data[modelId];
-      const expressIds = Array.from(elementIds);
-      
-      infoHtml += `<br><strong>Modelo:</strong> ${modelId}<br>`;
-      infoHtml += `<strong>Express IDs:</strong> ${expressIds.join(", ")}`;
-      
-      // Centraliza a rotação da câmera no objeto selecionado
-      const model = fragments.list.get(modelId);
-      if (model && model.object) {
-        // Calcula o centro do bounding box de todos os objetos do modelo
-        const bbox = new THREE.Box3().setFromObject(model.object);
-        
-        // Centraliza o target da câmera no centro do bounding box
-        const center = new THREE.Vector3();
-        bbox.getCenter(center);
-        world.camera.controls.setTarget(center.x, center.y, center.z, true);
-        
-        console.log("🎯 Câmera centralizada no modelo:", center);
-      }
+    // Busca e exibe as propriedades
+    const propertiesHtml = await displayElementProperties(modelId, expressIds);
+    fullHtml += propertiesHtml;
+    
+    // Centraliza a rotação da câmera no objeto selecionado
+    const model = fragments.list.get(modelId);
+    if (model && model.object) {
+      const bbox = new THREE.Box3().setFromObject(model.object);
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+      world.camera.controls.setTarget(center.x, center.y, center.z, true);
     }
-    
-    selectionInfo.innerHTML = infoHtml;
-    selectionInfo.style.display = "block";
   }
+  
+  // Adiciona botão de fechar
+  fullHtml = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <span style="font-size: 14px; font-weight: bold;">🎯 Propriedades do Elemento</span>
+    <button onclick="document.getElementById('selection-info').style.display='none'" 
+      style="background: transparent; border: none; color: white; cursor: pointer; font-size: 18px; padding: 0 4px;">✕</button>
+  </div>` + fullHtml;
+  
+  selectionInfo.innerHTML = fullHtml;
 });
 
 // Evento quando a seleção é limpa

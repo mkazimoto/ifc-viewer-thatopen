@@ -441,8 +441,16 @@ async function clearModels(): Promise<void> {
     fragments.list.delete(id);
   }
   
-  // Limpa o estado de visibilidade dos modelos
+  // Limpa o estado de visibilidade e transparência dos modelos e reseta a opacidade
   modelVisibilityState.clear();
+  modelTransparencyState.clear();
+  globalModelOpacity = 0.1; // 10% de transparencia
+  
+  // Reseta o slider de opacidade na interface
+  const opacitySlider = document.getElementById("opacity-slider") as HTMLInputElement;
+  const opacityValue = document.getElementById("opacity-value");
+  if (opacitySlider) opacitySlider.value = "10";
+  if (opacityValue) opacityValue.textContent = "10%";
   
   // Atualiza a lista de modelos na interface
   updateModelsList();
@@ -477,7 +485,7 @@ function takeScreenshot(): void {
     
     // Gera nome do arquivo com timestamp
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    link.download = `screenshot-${timestamp}.png`;
+    link.download = `foto-${timestamp}.png`;
     
     // Dispara o download
     document.body.appendChild(link);
@@ -498,13 +506,29 @@ function takeScreenshot(): void {
 // Variável para manter o estado de visibilidade de cada modelo
 const modelVisibilityState = new Map<string, boolean>();
 
+// Variável para manter o estado de transparência de cada modelo
+const modelTransparencyState = new Map<string, boolean>();
+
+// Valor global de opacidade para todos os modelos (0 a 1)
+let globalModelOpacity = 0.1;
+
 function updateModelsList(): void {
   const modelsList = document.getElementById("models-list");
   if (!modelsList) return;
   
   const modelEntries = Array.from(fragments.list.entries());
+  const hasModels = modelEntries.length > 0;
   
-  if (modelEntries.length === 0) {
+  // Habilita/desabilita botões com base na existência de modelos
+  const showAllBtn = document.getElementById("show-all-models") as HTMLElement;
+  const hideAllBtn = document.getElementById("hide-all-models") as HTMLElement;
+  const clearBtn = document.getElementById("clear-btn") as HTMLElement;
+  
+  if (showAllBtn) showAllBtn.toggleAttribute("disabled", !hasModels);
+  if (hideAllBtn) hideAllBtn.toggleAttribute("disabled", !hasModels);
+  if (clearBtn) clearBtn.toggleAttribute("disabled", !hasModels);
+  
+  if (!hasModels) {
     modelsList.innerHTML = '<span class="filter-empty">Nenhum modelo carregado</span>';
     return;
   }
@@ -513,23 +537,47 @@ function updateModelsList(): void {
   
   modelEntries.forEach(([modelId, _model], index) => {
     const isVisible = modelVisibilityState.get(modelId) !== false; // Por padrão é visível
+    const isTransparent = modelTransparencyState.get(modelId) === true; // Por padrão não é transparente
     const displayName = modelId || `Modelo ${index + 1}`;
     
     const modelItem = document.createElement("div");
     modelItem.className = "filter-item";
+    modelItem.style.display = "flex";
+    modelItem.style.alignItems = "center";
+    modelItem.style.justifyContent = "space-between";
     modelItem.innerHTML = `
-      <label class="filter-label">
+      <label class="filter-label" style="flex: 1;">
         <input 
           type="checkbox" 
           id="model-chk-${index}" 
           ${isVisible ? 'checked' : ''}>
         <span class="filter-text">${displayName}</span>
       </label>
+      <button 
+        id="model-transparency-${index}"
+        class="transparency-btn ${isTransparent ? 'active' : ''}"
+        title="${isTransparent ? 'Desativar transparência' : 'Ativar transparência'}"
+        style="
+          background: ${isTransparent ? '#6528D7' : 'transparent'};
+          border: 1px solid ${isTransparent ? '#6528D7' : '#666'};
+          border-radius: 4px;
+          padding: 4px 8px;
+          cursor: pointer;
+          font-size: 14px;
+          margin-left: 8px;
+          transition: all 0.2s ease;
+        "
+      >👁️‍🗨️</button>
     `;
     
     const checkbox = modelItem.querySelector('input') as HTMLInputElement;
     checkbox.addEventListener('change', () => {
       toggleModelVisibility(modelId, checkbox.checked);
+    });
+    
+    const transparencyBtn = modelItem.querySelector(`#model-transparency-${index}`) as HTMLButtonElement;
+    transparencyBtn.addEventListener('click', () => {
+      toggleModelTransparency(modelId, index);
     });
     
     modelsList.appendChild(modelItem);
@@ -544,6 +592,94 @@ function toggleModelVisibility(modelId: string, visible: boolean): void {
     modelVisibilityState.set(modelId, visible);
     console.log(`Modelo ${modelId} ${visible ? 'mostrado' : 'ocultado'}`);
   }
+}
+
+// Alterna a transparência de um modelo específico
+function toggleModelTransparency(modelId: string, index: number): void {
+  const model = fragments.list.get(modelId);
+  
+  if (model) {
+    const isCurrentlyTransparent = modelTransparencyState.get(modelId) === true;
+    const newTransparentState = !isCurrentlyTransparent;
+    
+    model.object.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((material) => {
+          if (material instanceof THREE.Material) {
+            // Armazena a opacidade original se não existir
+            if ((material as any)._originalOpacity === undefined) {
+              (material as any)._originalOpacity = material.opacity;
+              (material as any)._originalTransparent = material.transparent;
+            }
+            
+            if (newTransparentState && globalModelOpacity < 1) {
+              material.transparent = true;
+              material.opacity = globalModelOpacity * ((material as any)._originalOpacity || 1);
+            } else {
+              // Restaura para o estado original
+              material.opacity = (material as any)._originalOpacity || 1;
+              material.transparent = (material as any)._originalTransparent || false;
+            }
+            material.needsUpdate = true;
+          }
+        });
+      }
+    });
+    
+    modelTransparencyState.set(modelId, newTransparentState);
+    
+    // Atualiza o visual do botão
+    const transparencyBtn = document.getElementById(`model-transparency-${index}`) as HTMLButtonElement;
+    if (transparencyBtn) {
+      transparencyBtn.style.background = newTransparentState ? '#6528D7' : 'transparent';
+      transparencyBtn.style.borderColor = newTransparentState ? '#6528D7' : '#666';
+      transparencyBtn.title = newTransparentState ? 'Desativar transparência' : 'Ativar transparência';
+    }
+    
+    console.log(`Modelo ${modelId} ${newTransparentState ? 'transparente' : 'opaco'}`);
+  }
+}
+
+// Aplica a opacidade global apenas aos modelos com transparência ativada
+function setGlobalOpacity(opacity: number): void {
+  globalModelOpacity = opacity;
+  
+  const modelEntries = Array.from(fragments.list.entries());
+  
+  modelEntries.forEach(([modelId, model]) => {
+    const isTransparent = modelTransparencyState.get(modelId) === true;
+    
+    // Só aplica a opacidade se o modelo estiver com transparência ativada
+    if (!isTransparent) return;
+    
+    model.object.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((material) => {
+          if (material instanceof THREE.Material) {
+            // Armazena a opacidade original se não existir
+            if ((material as any)._originalOpacity === undefined) {
+              (material as any)._originalOpacity = material.opacity;
+              (material as any)._originalTransparent = material.transparent;
+            }
+            
+            if (opacity < 1) {
+              material.transparent = true;
+              material.opacity = opacity * ((material as any)._originalOpacity || 1);
+            } else {
+              // Restaura para o estado original
+              material.opacity = (material as any)._originalOpacity || 1;
+              material.transparent = (material as any)._originalTransparent || false;
+            }
+            material.needsUpdate = true;
+          }
+        });
+      }
+    });
+  });
+  
+  console.log(`Opacidade global definida para ${Math.round(opacity * 100)}%`);
 }
 
 function showAllModels(): void {
@@ -1423,9 +1559,22 @@ function createPanel(): BUI.Panel {
       />
 
        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-        <bim-button id="show-all-models" label="Mostrar Todos" icon="mdi:eye" style="flex:1"></bim-button>
-        <bim-button id="hide-all-models" label="Ocultar Todos" icon="mdi:eye-off" style="flex:1"></bim-button>
+        <bim-button id="show-all-models" label="Mostrar Todos" icon="mdi:eye" style="flex:1" disabled></bim-button>
+        <bim-button id="hide-all-models" label="Ocultar Todos" icon="mdi:eye-off" style="flex:1" disabled></bim-button>
       </div>
+      
+      <div style="margin-bottom: 12px;">
+        <bim-label style="margin-bottom: 4px;">Transparência: <span id="opacity-value">10%</span></bim-label>
+        <input 
+          id="opacity-slider"
+          type="range" 
+          min="10" 
+          max="100" 
+          value="10"
+          style="width: 100%; cursor: pointer; accent-color: #6528D7;"
+        />
+      </div>
+      
       <div id="models-list" class="filter-container">
         <span class="filter-empty">Nenhum modelo carregado</span>
       </div>
@@ -1433,7 +1582,8 @@ function createPanel(): BUI.Panel {
       <bim-button 
         id="clear-btn"
         label="Limpar Modelos" 
-        icon="mdi:delete">
+        icon="mdi:delete"
+        disabled>
       </bim-button>
     </bim-panel-section>
 
@@ -1602,6 +1752,16 @@ function createPanel(): BUI.Panel {
   
   panel.querySelector("#show-all-models")?.addEventListener("click", () => showAllModels());
   panel.querySelector("#hide-all-models")?.addEventListener("click", () => hideAllModels());
+  
+  // Event listener para o slider de opacidade/transparência
+  const opacitySlider = panel.querySelector("#opacity-slider") as HTMLInputElement;
+  const opacityValueLabel = panel.querySelector("#opacity-value");
+  opacitySlider?.addEventListener("input", () => {
+    const value = parseInt(opacitySlider.value);
+    const opacity = value / 100;
+    if (opacityValueLabel) opacityValueLabel.textContent = `${value}%`;
+    setGlobalOpacity(opacity);
+  });
 
   // Event listeners para planos de corte
   // (Removido toggleClippingBtn)

@@ -22,6 +22,16 @@ world.scene = new OBC.SimpleScene(components);
 world.scene.setup();
 world.scene.three.background = new THREE.Color(0xf0f0f0);
 
+// Ajusta a iluminação para não esbranquiçar materiais transparentes
+world.scene.three.traverse((child) => {
+  if (child instanceof THREE.DirectionalLight) {
+    child.intensity = 1.5;  // Reduz intensidade da luz direcional
+  }
+  if (child instanceof THREE.AmbientLight) {
+    child.intensity = 0.5;  // Reduz intensidade da luz ambiente
+  }
+});
+
 world.renderer = new OBCF.PostproductionRenderer(components, container);
 world.camera = new OBC.OrthoPerspectiveCamera(components);
 
@@ -120,11 +130,13 @@ function applyInitialTransparency(model: FragmentsModelType): void {
           if ((material as any)._originalOpacity === undefined) {
             (material as any)._originalOpacity = material.opacity;
             (material as any)._originalTransparent = material.transparent;
+            (material as any)._originalDepthWrite = material.depthWrite;
           }
           
           if (globalModelOpacity < 1) {
             material.transparent = true;
             material.opacity = globalModelOpacity * ((material as any)._originalOpacity || 1);
+            material.depthWrite = false; // Melhora renderização de transparência
           }
           material.needsUpdate = true;
         }
@@ -645,15 +657,18 @@ function toggleModelTransparency(modelId: string, index: number): void {
             if ((material as any)._originalOpacity === undefined) {
               (material as any)._originalOpacity = material.opacity;
               (material as any)._originalTransparent = material.transparent;
+              (material as any)._originalDepthWrite = material.depthWrite;
             }
             
             if (newTransparentState && globalModelOpacity < 1) {
               material.transparent = true;
               material.opacity = globalModelOpacity * ((material as any)._originalOpacity || 1);
+              material.depthWrite = false; // Melhora renderização de transparência
             } else {
               // Restaura para o estado original
               material.opacity = (material as any)._originalOpacity || 1;
               material.transparent = (material as any)._originalTransparent || false;
+              material.depthWrite = (material as any)._originalDepthWrite ?? true;
             }
             material.needsUpdate = true;
           }
@@ -696,15 +711,18 @@ function setGlobalOpacity(opacity: number): void {
             if ((material as any)._originalOpacity === undefined) {
               (material as any)._originalOpacity = material.opacity;
               (material as any)._originalTransparent = material.transparent;
+              (material as any)._originalDepthWrite = material.depthWrite;
             }
             
             if (opacity < 1) {
               material.transparent = true;
               material.opacity = opacity * ((material as any)._originalOpacity || 1);
+              material.depthWrite = false; // Melhora renderização de transparência
             } else {
               // Restaura para o estado original
               material.opacity = (material as any)._originalOpacity || 1;
               material.transparent = (material as any)._originalTransparent || false;
+              material.depthWrite = (material as any)._originalDepthWrite ?? true;
             }
             material.needsUpdate = true;
           }

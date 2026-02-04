@@ -87,6 +87,9 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
   // Enquadra automaticamente o modelo na câmera
   frameModel(model);
   
+  // Ativa transparência por padrão para o novo modelo
+  applyInitialTransparency(model);
+  
   // Atualiza a lista de modelos na interface
   updateModelsList();
   
@@ -98,6 +101,37 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
     await updateStoreyData(); // Atualiza dados para o seletor de nível da grade
   }, 500); // Pequeno delay para garantir que o modelo foi processado
 });
+
+// Função para aplicar transparência inicial a um modelo recém-carregado
+function applyInitialTransparency(model: FragmentsModelType): void {
+  const modelId = Array.from(fragments.list.entries()).find(([_, m]) => m === model)?.[0];
+  if (!modelId) return;
+  
+  // Define o estado de transparência como ativado
+  modelTransparencyState.set(modelId, true);
+  
+  // Aplica a opacidade global ao modelo
+  model.object.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.material) {
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((material) => {
+        if (material instanceof THREE.Material) {
+          // Armazena a opacidade original
+          if ((material as any)._originalOpacity === undefined) {
+            (material as any)._originalOpacity = material.opacity;
+            (material as any)._originalTransparent = material.transparent;
+          }
+          
+          if (globalModelOpacity < 1) {
+            material.transparent = true;
+            material.opacity = globalModelOpacity * ((material as any)._originalOpacity || 1);
+          }
+          material.needsUpdate = true;
+        }
+      });
+    }
+  });
+}
 
 // Função para ajustar o modelo ao nível 0 padrão
 async function adjustModelToLevel0(model: FragmentsModelType): Promise<void> {
@@ -444,13 +478,13 @@ async function clearModels(): Promise<void> {
   // Limpa o estado de visibilidade e transparência dos modelos e reseta a opacidade
   modelVisibilityState.clear();
   modelTransparencyState.clear();
-  globalModelOpacity = 0.1; // 10% de transparencia
+  globalModelOpacity = 1.0; // 100% de transparencia
   
   // Reseta o slider de opacidade na interface
   const opacitySlider = document.getElementById("opacity-slider") as HTMLInputElement;
   const opacityValue = document.getElementById("opacity-value");
   if (opacitySlider) opacitySlider.value = "10";
-  if (opacityValue) opacityValue.textContent = "10%";
+  if (opacityValue) opacityValue.textContent = "100%";
   
   // Atualiza a lista de modelos na interface
   updateModelsList();
@@ -1564,14 +1598,14 @@ function createPanel(): BUI.Panel {
       </div>
       
       <div style="margin-bottom: 12px;">
-        <bim-label style="margin-bottom: 4px;">Transparência: <span id="opacity-value">10%</span></bim-label>
+        <bim-label style="margin-bottom: 4px;">Transparência: <span id="opacity-value">100%</span></bim-label>
         <input 
           id="opacity-slider"
           type="range" 
-          min="10" 
+          min="0" 
           max="100" 
-          value="10"
-          style="width: 100%; cursor: pointer; accent-color: #6528D7;"
+          value="100"
+          style="width: 100%; cursor: pointer; accent-color: #282bd7;"
         />
       </div>
       

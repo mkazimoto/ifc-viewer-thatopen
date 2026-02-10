@@ -22,6 +22,19 @@ world.scene = new OBC.SimpleScene(components);
 world.scene.setup();
 world.scene.three.background = new THREE.Color(0xf0f0f0);
 
+// ==========================================
+// 🎨 Slider de Cor de Fundo
+// ==========================================
+
+const bgSlider = document.getElementById("bg-slider") as HTMLInputElement;
+if (bgSlider) {
+  bgSlider.addEventListener("input", (event) => {
+    const value = parseInt((event.target as HTMLInputElement).value);
+    const color = new THREE.Color().setRGB(value / 255, value / 255, value / 255);
+    world.scene.three.background = color;
+  });
+}
+
 // Ajusta a iluminação para não esbranquiçar materiais transparentes
 world.scene.three.traverse((child) => {
   if (child instanceof THREE.DirectionalLight) {

@@ -2320,7 +2320,7 @@ async function buildIfcTree(): Promise<void> {
           const projChildren = projNode.querySelector(".tree-children") as HTMLElement;
           
           // 2. IfcSite
-          await buildCategoryLevel(model, modelId, /IFCSITE/, "🌍 Terreno:", "site", projChildren, async (siteChildren) => {
+          await buildCategoryLevel(model, modelId, /IFCSITE/, "🌄 Terreno:", "site", projChildren, async (siteChildren) => {
             // 3. IfcBuilding
             await buildCategoryLevel(model, modelId, /IFCBUILDING$/, "🏢 Construção:", "building", siteChildren, async (buildingChildren) => {
               // 4. IfcBuildingStorey

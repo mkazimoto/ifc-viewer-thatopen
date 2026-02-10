@@ -117,6 +117,190 @@ html, body {
   font-weight: bold;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
+/* IFC Structure Tree Panel */
+#ifc-tree-panel {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  width: 320px;
+  max-height: calc(100vh - 30px);
+  background: rgba(26, 35, 126, 0.95);
+  color: white;
+  border-radius: 8px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 13px;
+  z-index: 1000;
+  display: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  overflow: hidden;
+  flex-direction: column;
+}
+
+#ifc-tree-panel.visible {
+  display: flex;
+}
+
+.tree-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(0,0,0,0.2);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  flex-shrink: 0;
+}
+
+.tree-panel-header span {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.tree-panel-close {
+  background: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.tree-panel-close:hover {
+  color: #ff6b6b;
+}
+
+.tree-panel-search {
+  padding: 8px 12px;
+  flex-shrink: 0;
+}
+
+.tree-panel-search input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 4px;
+  background: rgba(0,0,0,0.3);
+  color: white;
+  font-size: 12px;
+  outline: none;
+}
+
+.tree-panel-search input::placeholder {
+  color: rgba(255,255,255,0.4);
+}
+
+.tree-panel-search input:focus {
+  border-color: #bcf124;
+}
+
+.tree-content {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.tree-empty {
+  color: #888;
+  font-size: 12px;
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+.tree-node {
+  user-select: none;
+}
+
+.tree-node-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.tree-node-header:hover {
+  background: rgba(188, 241, 36, 0.1);
+}
+
+.tree-node-header.selected {
+  background: rgba(188, 241, 36, 0.2);
+}
+
+.tree-toggle {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #aaa;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.tree-toggle.expanded {
+  transform: rotate(90deg);
+}
+
+.tree-toggle.leaf {
+  visibility: hidden;
+}
+
+.tree-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.tree-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+.tree-label.category-label {
+  color: #81d4fa;
+  font-weight: 600;
+}
+
+.tree-label.storey-label {
+  color: #bcf124;
+  font-weight: 600;
+}
+
+.tree-label.element-label {
+  color: #ddd;
+}
+
+.tree-count {
+  font-size: 10px;
+  color: #888;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.tree-children {
+  display: none;
+  padding-left: 16px;
+}
+
+.tree-children.expanded {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  #ifc-tree-panel {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-height: 50vh;
+  }
+}
+
 /* Background Slider */
 .background-slider-container {
   position: fixed;

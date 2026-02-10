@@ -122,6 +122,7 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
     await processClassifications();
     await hideIfcSpaces();
     await updateStoreyData(); // Atualiza dados para o seletor de nível da grade
+    await buildIfcTree(); // Constrói a árvore de estrutura IFC
   }, 500); // Pequeno delay para garantir que o modelo foi processado
 });
 
@@ -513,6 +514,9 @@ async function clearModels(): Promise<void> {
   
   // Atualiza a lista de modelos na interface
   updateModelsList();
+  
+  // Limpa a árvore de estrutura IFC
+  clearIfcTree();
   
   // Reinicializa o fragments se necessário
   if (!fragments.core) {
@@ -1740,6 +1744,14 @@ function createPanel(): BUI.Panel {
       </div>
     </bim-panel-section>
 
+    <bim-panel-section label="🌳 Estrutura IFC" collapsed>
+      <bim-button 
+        id="toggle-tree-btn"
+        label="Abrir Árvore de Estrutura" 
+        icon="mdi:file-tree">
+      </bim-button>
+    </bim-panel-section>
+
     <bim-panel-section label="✂️ Planos de Corte" collapsed>
       <bim-button 
         id="create-box-btn"
@@ -1826,6 +1838,11 @@ function createPanel(): BUI.Panel {
     const opacity = value / 100;
     if (opacityValueLabel) opacityValueLabel.textContent = `${value}%`;
     setGlobalOpacity(opacity);
+  });
+
+  // Event listener para abrir/fechar árvore de estrutura
+  panel.querySelector("#toggle-tree-btn")?.addEventListener("click", () => {
+    ifcTreePanel.classList.toggle("visible");
   });
 
   // Event listeners para planos de corte
@@ -2110,6 +2127,479 @@ function createViewCube() {
 
 // Inicializa o ViewCube
 createViewCube();
+
+// ==========================================
+// 🌳 Painel de Estrutura IFC
+// ==========================================
+
+// Cria o painel da árvore IFC
+const ifcTreePanel = document.createElement("div");
+ifcTreePanel.id = "ifc-tree-panel";
+ifcTreePanel.innerHTML = `
+  <div class="tree-panel-header">
+    <span>🏗️ Estrutura IFC</span>
+    <button class="tree-panel-close" title="Fechar">✕</button>
+  </div>
+  <div class="tree-panel-search">
+    <input type="text" placeholder="Buscar elemento..." id="tree-search-input" />
+  </div>
+  <div class="tree-content">
+    <div class="tree-empty">Carregue um modelo IFC</div>
+  </div>
+`;
+document.body.appendChild(ifcTreePanel);
+
+// Botão de fechar
+ifcTreePanel.querySelector(".tree-panel-close")?.addEventListener("click", () => {
+  ifcTreePanel.classList.remove("visible");
+});
+
+// Busca na árvore
+const treeSearchInput = ifcTreePanel.querySelector("#tree-search-input") as HTMLInputElement;
+treeSearchInput?.addEventListener("input", () => {
+  const query = treeSearchInput.value.toLowerCase().trim();
+  filterTree(query);
+});
+
+function filterTree(query: string): void {
+  const treeContent = ifcTreePanel.querySelector(".tree-content");
+  if (!treeContent) return;
+  
+  const allNodes = treeContent.querySelectorAll(".tree-node");
+  
+  if (!query) {
+    // Mostra tudo e colapsa
+    allNodes.forEach((node) => {
+      (node as HTMLElement).style.display = "";
+    });
+    return;
+  }
+  
+  // Mostra nós que correspondam e seus pais
+  allNodes.forEach((node) => {
+    const header = node.querySelector(".tree-node-header");
+    const label = header?.querySelector(".tree-label")?.textContent?.toLowerCase() || "";
+    const el = node as HTMLElement;
+    
+    if (label.includes(query)) {
+      el.style.display = "";
+      // Expande e mostra pais
+      let parent = el.parentElement;
+      while (parent && parent !== treeContent) {
+        if (parent.classList.contains("tree-children")) {
+          parent.classList.add("expanded");
+          const toggle = parent.previousElementSibling?.querySelector(".tree-toggle");
+          toggle?.classList.add("expanded");
+        }
+        if (parent.classList.contains("tree-node")) {
+          (parent as HTMLElement).style.display = "";
+        }
+        parent = parent.parentElement;
+      }
+    } else {
+      // Verifica se algum descendente corresponde
+      const descendants = node.querySelectorAll(".tree-label");
+      let hasMatch = false;
+      descendants.forEach((desc) => {
+        if (desc.textContent?.toLowerCase().includes(query)) hasMatch = true;
+      });
+      el.style.display = hasMatch ? "" : "none";
+    }
+  });
+}
+
+function clearIfcTree(): void {
+  const treeContent = ifcTreePanel.querySelector(".tree-content");
+  if (treeContent) {
+    treeContent.innerHTML = '<div class="tree-empty">Carregue um modelo IFC</div>';
+  }
+  ifcTreePanel.classList.remove("visible");
+}
+
+async function buildIfcTree(): Promise<void> {
+  const treeContent = ifcTreePanel.querySelector(".tree-content");
+  if (!treeContent) return;
+  
+  treeContent.innerHTML = '<div class="tree-empty">🔄 Construindo árvore...</div>';
+  
+  try {
+    const modelEntries = Array.from(fragments.list.entries());
+    if (modelEntries.length === 0) {
+      treeContent.innerHTML = '<div class="tree-empty">Carregue um modelo IFC</div>';
+      return;
+    }
+    
+    treeContent.innerHTML = '';
+    
+    for (const [modelId, model] of modelEntries) {
+      const modelNode = createTreeNode(`📄 ${modelId || 'Modelo'}`, "model");
+      treeContent.appendChild(modelNode);
+      const modelChildren = modelNode.querySelector(".tree-children") as HTMLElement;
+      
+      // Busca a estrutura hierárquica
+      // 1. IfcProject
+      const projects = await model.getItemsOfCategories([/IFCPROJECT/]);
+      const projectIds = Object.values(projects).flat();
+      
+      if (projectIds.length > 0) {
+        const projectData = await model.getItemsData(projectIds);
+        for (let i = 0; i < projectData.length; i++) {
+          const proj = projectData[i];
+          const projName = getAttrValue(proj, "Name") || "IfcProject";
+          const projNode = createTreeNode(`🏛️ ${projName}`, "project");
+          modelChildren.appendChild(projNode);
+          const projChildren = projNode.querySelector(".tree-children") as HTMLElement;
+          
+          // 2. IfcSite
+          await buildCategoryLevel(model, modelId, /IFCSITE/, "🌍", "site", projChildren, async (siteChildren) => {
+            // 3. IfcBuilding
+            await buildCategoryLevel(model, modelId, /IFCBUILDING$/, "🏢", "building", siteChildren, async (buildingChildren) => {
+              // 4. IfcBuildingStorey
+              await buildStoreyLevel(model, modelId, buildingChildren);
+            });
+          });
+        }
+      } else {
+        // Se não tem IfcProject, construir direto por andares
+        await buildStoreyLevel(model, modelId, modelChildren);
+      }
+      
+      // Expande o primeiro nível
+      const firstChildren = modelNode.querySelector(".tree-children");
+      const firstToggle = modelNode.querySelector(".tree-toggle");
+      firstChildren?.classList.add("expanded");
+      firstToggle?.classList.add("expanded");
+    }
+    
+    // Mostra o painel
+    ifcTreePanel.classList.add("visible");
+    
+  } catch (error) {
+    console.error("Erro ao construir árvore IFC:", error);
+    treeContent.innerHTML = '<div class="tree-empty">Erro ao construir árvore</div>';
+  }
+}
+
+function getAttrValue(item: Record<string, unknown>, attr: string): string | null {
+  if (attr in item && item[attr] && typeof item[attr] === "object" && "value" in (item[attr] as Record<string, unknown>)) {
+    return String((item[attr] as Record<string, unknown>).value);
+  }
+  return null;
+}
+
+async function buildCategoryLevel(
+  model: FragmentsModelType,
+  _modelId: string,
+  categoryRegex: RegExp,
+  icon: string,
+  type: string,
+  parentContainer: HTMLElement,
+  childBuilder?: (childContainer: HTMLElement) => Promise<void>
+): Promise<void> {
+  const items = await model.getItemsOfCategories([categoryRegex]);
+  const itemIds = Object.values(items).flat();
+  
+  if (itemIds.length === 0 && childBuilder) {
+    // Pula esse nível se vazio
+    await childBuilder(parentContainer);
+    return;
+  }
+  
+  if (itemIds.length > 0) {
+    const itemsData = await model.getItemsData(itemIds);
+    for (let i = 0; i < itemsData.length; i++) {
+      const item = itemsData[i];
+      const name = getAttrValue(item, "Name") || `${type} ${i + 1}`;
+      const node = createTreeNode(`${icon} ${name}`, type);
+      parentContainer.appendChild(node);
+      
+      if (childBuilder) {
+        const children = node.querySelector(".tree-children") as HTMLElement;
+        await childBuilder(children);
+      }
+    }
+  }
+}
+
+async function buildStoreyLevel(
+  model: FragmentsModelType,
+  modelId: string,
+  parentContainer: HTMLElement
+): Promise<void> {
+  const storeys = await model.getItemsOfCategories([/BUILDINGSTOREY/]);
+  const storeyIds = Object.values(storeys).flat();
+  
+  if (storeyIds.length === 0) {
+    // Sem andares, lista os elementos diretamente
+    await buildElementsByCategory(model, modelId, parentContainer);
+    return;
+  }
+  
+  const storeysData = await model.getItemsData(storeyIds);
+  
+  // Ordena por elevação
+  const storeyList: { name: string; elevation: number; expressId: number }[] = [];
+  for (let i = 0; i < storeysData.length; i++) {
+    const s = storeysData[i];
+    const name = getAttrValue(s, "Name") || `Nível ${i + 1}`;
+    const elev = s.Elevation && typeof s.Elevation === "object" && "value" in (s.Elevation as unknown as Record<string, unknown>)
+      ? Number((s.Elevation as unknown as Record<string, unknown>).value)
+      : 0;
+    storeyList.push({ name, elevation: elev, expressId: storeyIds[i] });
+  }
+  storeyList.sort((a, b) => a.elevation - b.elevation);
+  
+  for (const storey of storeyList) {
+    const elevStr = storey.elevation.toFixed(2);
+    const storeyNode = createTreeNode(`🏢 ${storey.name} (${elevStr}m)`, "storey");
+    storeyNode.querySelector(".tree-label")?.classList.add("storey-label");
+    parentContainer.appendChild(storeyNode);
+    
+    const storeyChildren = storeyNode.querySelector(".tree-children") as HTMLElement;
+    
+    // Adiciona elementos deste andar agrupados por categoria
+    await buildElementsForStorey(model, modelId, storey.name, storeyChildren);
+  }
+}
+
+async function buildElementsForStorey(
+  model: FragmentsModelType,
+  modelId: string,
+  storeyName: string,
+  container: HTMLElement
+): Promise<void> {
+  // Usa o classifier para obter elementos deste andar
+  const storeyClassification = classifier.list.get("Storeys");
+  const categoryClassification = classifier.list.get("Categories");
+  
+  if (!storeyClassification || !categoryClassification) {
+    container.innerHTML = '<span class="tree-empty">Sem dados</span>';
+    return;
+  }
+  
+  const storeyGroup = storeyClassification.get(storeyName);
+  if (!storeyGroup) return;
+  
+  const storeyItemsMap = await storeyGroup.get();
+  
+  // Coleta todos os expressIds deste andar
+  const storeyExpressIds = new Set<number>();
+  for (const ids of Object.values(storeyItemsMap)) {
+    const idArray = Array.isArray(ids) ? ids : Array.from(ids as Set<number>);
+    for (const id of idArray) storeyExpressIds.add(id);
+  }
+  
+  if (storeyExpressIds.size === 0) return;
+  
+  // Busca dados dos elementos
+  const expressIdArray = Array.from(storeyExpressIds);
+  let elementsData: Record<string, unknown>[];
+  try {
+    elementsData = await model.getItemsData(expressIdArray);
+  } catch {
+    return;
+  }
+  
+  // Agrupa por categoria
+  const byCategory = new Map<string, { name: string; expressId: number }[]>();
+  for (let i = 0; i < elementsData.length; i++) {
+    const el = elementsData[i];
+    const category = getAttrValue(el, "_category") || el._category && typeof el._category === "object" && "value" in (el._category as Record<string, unknown>)
+      ? String((el._category as Record<string, unknown>).value)
+      : "Outros";
+    const catName = typeof category === "string" ? category : "Outros";
+    const name = getAttrValue(el, "Name") || `Elemento ${expressIdArray[i]}`;
+    if (!byCategory.has(catName)) byCategory.set(catName, []);
+    byCategory.get(catName)!.push({ name, expressId: expressIdArray[i] });
+  }
+  
+  // Ordena categorias alfabeticamente
+  const sortedCategories = Array.from(byCategory.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  
+  for (const [category, elements] of sortedCategories) {
+    const catIcon = getCategoryIcon(category);
+    const catNode = createTreeNode(`${catIcon} ${cleanCategoryName(category)} (${elements.length})`, "category");
+    catNode.querySelector(".tree-label")?.classList.add("category-label");
+    container.appendChild(catNode);
+    
+    const catChildren = catNode.querySelector(".tree-children") as HTMLElement;
+    
+    // Ordena elementos por nome
+    elements.sort((a, b) => a.name.localeCompare(b.name));
+    
+    for (const el of elements) {
+      const elNode = createTreeNode(el.name, "element", true);
+      elNode.querySelector(".tree-label")?.classList.add("element-label");
+      
+      // Clique para selecionar no 3D
+      const header = elNode.querySelector(".tree-node-header") as HTMLElement;
+      header.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectElementInScene(modelId, el.expressId);
+        
+        // Visual feedback
+        ifcTreePanel.querySelectorAll(".tree-node-header.selected").forEach(h => h.classList.remove("selected"));
+        header.classList.add("selected");
+      });
+      
+      catChildren.appendChild(elNode);
+    }
+  }
+}
+
+async function buildElementsByCategory(
+  model: FragmentsModelType,
+  modelId: string,
+  container: HTMLElement
+): Promise<void> {
+  const categoryClassification = classifier.list.get("Categories");
+  if (!categoryClassification) {
+    container.innerHTML = '<span class="tree-empty">Sem categorias</span>';
+    return;
+  }
+  
+  for (const [categoryName, groupData] of categoryClassification) {
+    const itemsMap = await groupData.get();
+    const allIds: number[] = [];
+    for (const ids of Object.values(itemsMap)) {
+      const idArray = Array.isArray(ids) ? ids : Array.from(ids as Set<number>);
+      allIds.push(...idArray);
+    }
+    
+    if (allIds.length === 0) continue;
+    
+    const catIcon = getCategoryIcon(categoryName);
+    const catNode = createTreeNode(`${catIcon} ${cleanCategoryName(categoryName)} (${allIds.length})`, "category");
+    catNode.querySelector(".tree-label")?.classList.add("category-label");
+    container.appendChild(catNode);
+    
+    const catChildren = catNode.querySelector(".tree-children") as HTMLElement;
+    
+    let elementsData: Record<string, unknown>[];
+    try {
+      elementsData = await model.getItemsData(allIds);
+    } catch {
+      continue;
+    }
+    
+    const elements: { name: string; expressId: number }[] = [];
+    for (let i = 0; i < elementsData.length; i++) {
+      const name = getAttrValue(elementsData[i], "Name") || `Elemento ${allIds[i]}`;
+      elements.push({ name, expressId: allIds[i] });
+    }
+    elements.sort((a, b) => a.name.localeCompare(b.name));
+    
+    for (const el of elements) {
+      const elNode = createTreeNode(el.name, "element", true);
+      elNode.querySelector(".tree-label")?.classList.add("element-label");
+      
+      const header = elNode.querySelector(".tree-node-header") as HTMLElement;
+      header.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectElementInScene(modelId, el.expressId);
+        ifcTreePanel.querySelectorAll(".tree-node-header.selected").forEach(h => h.classList.remove("selected"));
+        header.classList.add("selected");
+      });
+      
+      catChildren.appendChild(elNode);
+    }
+  }
+}
+
+function createTreeNode(label: string, type: string, isLeaf = false): HTMLElement {
+  const node = document.createElement("div");
+  node.className = "tree-node";
+  node.dataset.type = type;
+  
+  const header = document.createElement("div");
+  header.className = "tree-node-header";
+  
+  const toggle = document.createElement("span");
+  toggle.className = `tree-toggle${isLeaf ? " leaf" : ""}`;
+  toggle.textContent = "▶";
+  
+  const labelSpan = document.createElement("span");
+  labelSpan.className = "tree-label";
+  labelSpan.textContent = label;
+  labelSpan.title = label;
+  
+  header.appendChild(toggle);
+  header.appendChild(labelSpan);
+  node.appendChild(header);
+  
+  if (!isLeaf) {
+    const children = document.createElement("div");
+    children.className = "tree-children";
+    node.appendChild(children);
+    
+    header.addEventListener("click", (e) => {
+      e.stopPropagation();
+      children.classList.toggle("expanded");
+      toggle.classList.toggle("expanded");
+    });
+  }
+  
+  return node;
+}
+
+function getCategoryIcon(category: string): string {
+  const cat = category.toUpperCase();
+  if (cat.includes("WALL")) return "🧱";
+  if (cat.includes("SLAB") || cat.includes("FLOOR")) return "⬜";
+  if (cat.includes("ROOF")) return "🏠";
+  if (cat.includes("COLUMN")) return "🏛️";
+  if (cat.includes("BEAM")) return "📏";
+  if (cat.includes("DOOR")) return "🚪";
+  if (cat.includes("WINDOW")) return "🪟";
+  if (cat.includes("STAIR")) return "🪜";
+  if (cat.includes("RAILING")) return "🔲";
+  if (cat.includes("FURNISH")) return "🪑";
+  if (cat.includes("SPACE")) return "📦";
+  if (cat.includes("COVERING")) return "🎨";
+  if (cat.includes("PIPE") || cat.includes("DUCT")) return "🔧";
+  if (cat.includes("PROXY")) return "⚙️";
+  if (cat.includes("PLATE")) return "🔳";
+  if (cat.includes("MEMBER")) return "📐";
+  if (cat.includes("CURTAINWALL")) return "🏢";
+  if (cat.includes("OPENING")) return "⬛";
+  return "📋";
+}
+
+function cleanCategoryName(name: string): string {
+  // Remove o prefixo IFC e formata: IFCWALL → Wall
+  return name
+    .replace(/^IFC/i, "")
+    .replace(/STANDARDCASE$/i, "")
+    .replace(/TYPE$/i, "")
+    .replace(/([A-Z])/g, " $1")
+    .trim();
+}
+
+async function selectElementInScene(modelId: string, expressId: number): Promise<void> {
+  try {
+    const model = fragments.list.get(modelId);
+    if (!model) return;
+    
+    // Usa o highlighter para selecionar o elemento
+    highlighter.clear("select");
+    
+    // Dispara as propriedades manualmente
+    const propertiesHtml = await displayElementProperties(modelId, [expressId]);
+    
+    if (propertiesHtml) {
+      selectionInfo.innerHTML = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <span style="font-size: 14px; font-weight: bold;">🎯 Propriedades do Elemento</span>
+        <button onclick="document.getElementById('selection-info').style.display='none'" 
+          style="background: transparent; border: none; color: white; cursor: pointer; font-size: 18px; padding: 0 4px;">✕</button>
+      </div>` + propertiesHtml;
+      selectionInfo.style.display = "block";
+    }
+    
+    console.log(`🌳 Elemento selecionado na árvore: ${modelId} #${expressId}`);
+  } catch (error) {
+    console.error("Erro ao selecionar elemento:", error);
+  }
+}
 
 // ==========================================
 // 🖱️ Highlighter - Seleção ao clicar

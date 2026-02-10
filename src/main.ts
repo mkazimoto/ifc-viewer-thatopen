@@ -2644,16 +2644,47 @@ function cleanCategoryName(name: string): string {
     .trim();
 }
 
+// Aplica transparência de 20% a todos os elementos do modelo
+function applyTransparencyToAllElements(): void {
+  for (const [, model] of fragments.list) {
+    model.object.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((material: THREE.Material) => {
+          if (material instanceof THREE.Material) {
+            // Armazena a opacidade original se não existir
+            if ((material as any)._originalOpacity === undefined) {
+              (material as any)._originalOpacity = material.opacity;
+              (material as any)._originalTransparent = material.transparent;
+              (material as any)._originalDepthWrite = material.depthWrite;
+            }
+            
+            // Aplica 20% de opacidade
+            material.transparent = true;
+            material.opacity = 0.2;
+            material.depthWrite = false;
+            material.needsUpdate = true;
+          }
+        });
+      }
+    });
+  }
+}
+
 async function selectElementInScene(modelId: string, expressId: number): Promise<void> {
   try {
     const model = fragments.list.get(modelId);
     if (!model) return;
+    
+    // Aplica 20% de opacidade a todos os elementos
+    applyTransparencyToAllElements();
     
     // Limpa a seleção anterior
     highlighter.clear("select");
     
     // Destaca o elemento no modelo 3D usando o highlighter
     // O highlighter espera um mapa: { [modelId]: Set<expressId> }
+    // O elemento selecionado ficará com a cor azul escuro definida no highlighter
     highlighter.highlightByID("select", { [modelId]: new Set([expressId]) });
     
     // Obtém a bounding box do elemento para focar a câmera
@@ -2661,33 +2692,20 @@ async function selectElementInScene(modelId: string, expressId: number): Promise
       const bbox = await model.getMergedBox([expressId]);
       
       if (!bbox.isEmpty()) {
-        const center = new THREE.Vector3();
-        bbox.getCenter(center);
-        const size = new THREE.Vector3();
-        bbox.getSize(size);
+        // A bounding box vem em espaço local do modelo.
+        // Aplica a transformação do objeto (posição/rotação/escala) para world space.
+        bbox.applyMatrix4(model.object.matrixWorld);
         
-        // Calcula distância apropriada baseada no tamanho do elemento
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const distance = Math.max(maxDim * 2.5, 5); // Distância mínima de 5 unidades
+        // Enquadra a câmera na bounding box do elemento
+        await world.camera.controls.fitToBox(bbox, true, {
+          paddingTop: 5,
+          paddingBottom: 5,
+          paddingLeft: 5,
+          paddingRight: 5,
+        });
         
-        // Calcula a posição da câmera mantendo a direção atual
-        const currentPos = new THREE.Vector3();
-        world.camera.three.getWorldPosition(currentPos);
-        const currentTarget = new THREE.Vector3();
-        world.camera.controls.getTarget(currentTarget);
-        
-        // Vetor de direção da câmera para o alvo
-        const direction = new THREE.Vector3().subVectors(currentPos, currentTarget).normalize();
-        
-        // Nova posição da câmera em relação ao elemento
-        const newCameraPos = new THREE.Vector3().addVectors(center, direction.multiplyScalar(distance));
-        
-        // Move a câmera suavemente
-        await world.camera.controls.setLookAt(
-          newCameraPos.x, newCameraPos.y, newCameraPos.z,
-          center.x, center.y, center.z,
-          true
-        );
+        // Aplica zoom adicional para aproximar do objeto
+        await world.camera.controls.dolly(3, true);
       }
     } catch (boxError) {
       console.warn("Não foi possível focar a câmera no elemento:", boxError);
@@ -2882,6 +2900,9 @@ highlighter.events.select.onHighlight.add(async (data) => {
     return;
   }
   
+  // Aplica 20% de opacidade a todos os elementos
+  applyTransparencyToAllElements();
+  
   // Mostra loading
   let propsContentEl = selectionInfo.querySelector(".props-content");
   if (propsContentEl) {
@@ -2924,6 +2945,25 @@ highlighter.events.select.onHighlight.add(async (data) => {
 // Evento quando a seleção é limpa
 highlighter.events.select.onClear.add(() => {
   console.log("❌ Seleção limpa");
+  
+  // Restaura opacidade normal de todos os elementos
+  for (const [, model] of fragments.list) {
+    model.object.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((material) => {
+          if (material instanceof THREE.Material) {
+            // Restaura opacidade original
+            material.opacity = (material as any)._originalOpacity || 1;
+            material.transparent = (material as any)._originalTransparent || false;
+            material.depthWrite = (material as any)._originalDepthWrite ?? true;
+            material.needsUpdate = true;
+          }
+        });
+      }
+    });
+  }
+  
   const propsContent = selectionInfo.querySelector(".props-content");
   if (propsContent) {
     propsContent.innerHTML = '<div class="props-empty">Selecione um elemento</div>';

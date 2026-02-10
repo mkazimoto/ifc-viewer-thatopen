@@ -1840,9 +1840,9 @@ function createPanel(): BUI.Panel {
     setGlobalOpacity(opacity);
   });
 
-  // Event listener para abrir/fechar árvore de estrutura
+  // Event listener para abrir/fechar painel unificado
   panel.querySelector("#toggle-tree-btn")?.addEventListener("click", () => {
-    ifcTreePanel.classList.toggle("visible");
+    unifiedPanel.classList.toggle("visible");
   });
 
   // Event listeners para planos de corte
@@ -2129,8 +2129,12 @@ function createViewCube() {
 createViewCube();
 
 // ==========================================
-// 🌳 Painel de Estrutura IFC
+// 🌳 Painel Unificado (Estrutura + Propriedades)
 // ==========================================
+
+// Cria o container principal unificado
+const unifiedPanel = document.createElement("div");
+unifiedPanel.id = "unified-left-panel";
 
 // Cria o painel da árvore IFC
 const ifcTreePanel = document.createElement("div");
@@ -2138,7 +2142,7 @@ ifcTreePanel.id = "ifc-tree-panel";
 ifcTreePanel.innerHTML = `
   <div class="tree-panel-header">
     <span>🏗️ Estrutura IFC</span>
-    <button class="tree-panel-close" title="Fechar">✕</button>
+    <button class="tree-panel-close" title="Fechar painel">✕</button>
   </div>
   <div class="tree-panel-search">
     <input type="text" placeholder="Buscar elemento..." id="tree-search-input" />
@@ -2147,11 +2151,69 @@ ifcTreePanel.innerHTML = `
     <div class="tree-empty">Carregue um modelo IFC</div>
   </div>
 `;
-document.body.appendChild(ifcTreePanel);
+
+// Cria o splitter redimensionável
+const panelSplitter = document.createElement("div");
+panelSplitter.className = "panel-splitter";
+
+// Cria o painel de propriedades
+const selectionInfo = document.createElement("div");
+selectionInfo.id = "selection-info";
+selectionInfo.innerHTML = `
+  <div class="props-header">
+    <span>🎯 Propriedades</span>
+  </div>
+  <div class="props-content">
+    <div class="props-empty">Selecione um elemento</div>
+  </div>
+`;
+
+// Monta a estrutura
+unifiedPanel.appendChild(ifcTreePanel);
+unifiedPanel.appendChild(panelSplitter);
+unifiedPanel.appendChild(selectionInfo);
+document.body.appendChild(unifiedPanel);
 
 // Botão de fechar
 ifcTreePanel.querySelector(".tree-panel-close")?.addEventListener("click", () => {
-  ifcTreePanel.classList.remove("visible");
+  unifiedPanel.classList.remove("visible");
+});
+
+// Implementa o comportamento do splitter
+let isResizing = false;
+let startY = 0;
+let startTreeHeight = 0;
+
+panelSplitter.addEventListener("mousedown", (e) => {
+  isResizing = true;
+  startY = e.clientY;
+  startTreeHeight = ifcTreePanel.offsetHeight;
+  document.body.style.cursor = "row-resize";
+  document.body.style.userSelect = "none";
+  e.preventDefault();
+});
+
+document.addEventListener("mousemove", (e) => {
+  if (!isResizing) return;
+  
+  const deltaY = e.clientY - startY;
+  const newTreeHeight = startTreeHeight + deltaY;
+  const minHeight = 150;
+  const maxHeight = unifiedPanel.offsetHeight - 150 - panelSplitter.offsetHeight;
+  
+  if (newTreeHeight >= minHeight && newTreeHeight <= maxHeight) {
+    ifcTreePanel.style.flex = "none";
+    ifcTreePanel.style.height = `${newTreeHeight}px`;
+    selectionInfo.style.flex = "1";
+  }
+});
+
+document.addEventListener("mouseup", () => {
+  if (isResizing) {
+    isResizing = false;
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }
 });
 
 // Busca na árvore
@@ -2213,7 +2275,14 @@ function clearIfcTree(): void {
   if (treeContent) {
     treeContent.innerHTML = '<div class="tree-empty">Carregue um modelo IFC</div>';
   }
-  ifcTreePanel.classList.remove("visible");
+  
+  // Limpa também o painel de propriedades
+  const propsContent = selectionInfo.querySelector(".props-content");
+  if (propsContent) {
+    propsContent.innerHTML = '<div class="props-empty">Selecione um elemento</div>';
+  }
+  
+  unifiedPanel.classList.remove("visible");
 }
 
 async function buildIfcTree(): Promise<void> {
@@ -2271,8 +2340,8 @@ async function buildIfcTree(): Promise<void> {
       firstToggle?.classList.add("expanded");
     }
     
-    // Mostra o painel
-    ifcTreePanel.classList.add("visible");
+    // Mostra o painel unificado
+    unifiedPanel.classList.add("visible");
     
   } catch (error) {
     console.error("Erro ao construir árvore IFC:", error);
@@ -2628,12 +2697,15 @@ async function selectElementInScene(modelId: string, expressId: number): Promise
     const propertiesHtml = await displayElementProperties(modelId, [expressId]);
     
     if (propertiesHtml) {
-      selectionInfo.innerHTML = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <span style="font-size: 14px; font-weight: bold;">🎯 Propriedades do Elemento</span>
-        <button onclick="document.getElementById('selection-info').style.display='none'" 
-          style="background: transparent; border: none; color: white; cursor: pointer; font-size: 18px; padding: 0 4px;">✕</button>
-      </div>` + propertiesHtml;
-      selectionInfo.style.display = "block";
+      const propsContent = selectionInfo.querySelector(".props-content");
+      if (propsContent) {
+        propsContent.innerHTML = propertiesHtml;
+      }
+      
+      // Mostra o painel se ainda não estiver visível
+      if (!unifiedPanel.classList.contains("visible")) {
+        unifiedPanel.classList.add("visible");
+      }
     }
     
     console.log(`🌳 Elemento selecionado na árvore: ${modelId} #${expressId}`);
@@ -2654,28 +2726,6 @@ highlighter.config.selectionColor = new THREE.Color(0x1a237e);
 
 // Ativa destaque automático ao clicar
 highlighter.config.autoHighlightOnClick = true;
-
-// Elemento para exibir informações do objeto selecionado
-const selectionInfo = document.createElement("div");
-selectionInfo.id = "selection-info";
-selectionInfo.style.cssText = `
-  position: fixed;
-  bottom: 20px;
-  left: 20px;
-  width: 350px;
-  background: rgba(26, 35, 126, 0.95);
-  color: white;
-  padding: 16px 20px;
-  border-radius: 8px;
-  font-family: 'Segoe UI', Arial, sans-serif;
-  font-size: 13px;
-  z-index: 1000;
-  display: none;
-  max-height: 60vh;
-  overflow-y: auto;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-`;
-document.body.appendChild(selectionInfo);
 
 // Função para formatar valor de propriedade
 function formatPropertyValue(value: unknown): string {
@@ -2833,10 +2883,15 @@ highlighter.events.select.onHighlight.add(async (data) => {
   }
   
   // Mostra loading
-  selectionInfo.innerHTML = `<div style="text-align: center; padding: 20px;">
-    <div style="color: #bcf124;">🔄 Carregando propriedades...</div>
-  </div>`;
-  selectionInfo.style.display = "block";
+  let propsContentEl = selectionInfo.querySelector(".props-content");
+  if (propsContentEl) {
+    propsContentEl.innerHTML = '<div style="text-align: center; padding: 20px;"><div style="color: #bcf124;">🔄 Carregando propriedades...</div></div>';
+  }
+  
+  // Mostra o painel se ainda não estiver visível
+  if (!unifiedPanel.classList.contains("visible")) {
+    unifiedPanel.classList.add("visible");
+  }
   
   // Extrai os IDs dos objetos selecionados (apenas de modelos visíveis)
   let fullHtml = "";
@@ -2859,20 +2914,20 @@ highlighter.events.select.onHighlight.add(async (data) => {
     }
   }
   
-  // Adiciona botão de fechar
-  fullHtml = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-    <span style="font-size: 14px; font-weight: bold;">🎯 Propriedades do Elemento</span>
-    <button onclick="document.getElementById('selection-info').style.display='none'" 
-      style="background: transparent; border: none; color: white; cursor: pointer; font-size: 18px; padding: 0 4px;">✕</button>
-  </div>` + fullHtml;
-  
-  selectionInfo.innerHTML = fullHtml;
+  // Atualiza o conteúdo de propriedades
+  propsContentEl = selectionInfo.querySelector(".props-content");
+  if (propsContentEl) {
+    propsContentEl.innerHTML = fullHtml;
+  }
 });
 
 // Evento quando a seleção é limpa
 highlighter.events.select.onClear.add(() => {
   console.log("❌ Seleção limpa");
-  selectionInfo.style.display = "none";
+  const propsContent = selectionInfo.querySelector(".props-content");
+  if (propsContent) {
+    propsContent.innerHTML = '<div class="props-empty">Selecione um elemento</div>';
+  }
 });
 
 // ==========================================

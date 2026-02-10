@@ -2500,6 +2500,10 @@ async function buildElementsForStorey(
       const elNode = createTreeNode(el.name, "element", true);
       elNode.querySelector(".tree-label")?.classList.add("element-label");
       
+      // Armazena o expressId e modelId como atributos data
+      elNode.dataset.expressId = String(el.expressId);
+      elNode.dataset.modelId = modelId;
+      
       // Clique para selecionar no 3D
       const header = elNode.querySelector(".tree-node-header") as HTMLElement;
       header.addEventListener("click", (e) => {
@@ -2561,6 +2565,10 @@ async function buildElementsByCategory(
     for (const el of elements) {
       const elNode = createTreeNode(el.name, "element", true);
       elNode.querySelector(".tree-label")?.classList.add("element-label");
+      
+      // Armazena o expressId e modelId como atributos data
+      elNode.dataset.expressId = String(el.expressId);
+      elNode.dataset.modelId = modelId;
       
       const header = elNode.querySelector(".tree-node-header") as HTMLElement;
       header.addEventListener("click", (e) => {
@@ -2669,6 +2677,58 @@ function applyTransparencyToAllElements(): void {
       }
     });
   }
+}
+
+// Função para selecionar elemento na tree view
+function selectElementInTreeView(modelId: string, expressId: number): void {
+  // Procura o nó na árvore que corresponde ao elemento
+  const treeNodes = ifcTreePanel.querySelectorAll(".tree-node[data-type='element']");
+  let targetNode: HTMLElement | null = null;
+  
+  for (const node of Array.from(treeNodes)) {
+    const element = node as HTMLElement;
+    if (element.dataset.expressId === String(expressId) && element.dataset.modelId === modelId) {
+      targetNode = element;
+      break;
+    }
+  }
+  
+  if (!targetNode) {
+    console.log("⚠️ Elemento não encontrado na tree view");
+    return;
+  }
+  
+  // Remove seleção anterior
+  ifcTreePanel.querySelectorAll(".tree-node-header.selected").forEach(h => h.classList.remove("selected"));
+  
+  // Adiciona seleção ao elemento encontrado
+  const header = targetNode.querySelector(".tree-node-header") as HTMLElement;
+  if (header) {
+    header.classList.add("selected");
+  }
+  
+  // Expande todos os nós pais para tornar o elemento visível
+  let parent = targetNode.parentElement;
+  while (parent && parent !== ifcTreePanel) {
+    if (parent.classList.contains("tree-children")) {
+      parent.classList.add("expanded");
+      
+      // Expande o toggle do nó pai
+      const parentNode = parent.previousElementSibling;
+      if (parentNode) {
+        const toggle = parentNode.querySelector(".tree-toggle");
+        toggle?.classList.add("expanded");
+      }
+    }
+    parent = parent.parentElement;
+  }
+  
+  // Faz scroll até o elemento na árvore
+  if (header) {
+    header.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  
+  console.log("🌳 Elemento selecionado na tree view: expressId " + expressId);
 }
 
 async function selectElementInScene(modelId: string, expressId: number): Promise<void> {
@@ -2920,6 +2980,11 @@ highlighter.events.select.onHighlight.add(async (data) => {
   for (const modelId of visibleModelIds) {
     const elementIds = data[modelId];
     const expressIds = Array.from(elementIds);
+    
+    // Seleciona o primeiro elemento na tree view (sincronização)
+    if (expressIds.length > 0) {
+      selectElementInTreeView(modelId, expressIds[0]);
+    }
     
     // Busca e exibe as propriedades
     const propertiesHtml = await displayElementProperties(modelId, expressIds);

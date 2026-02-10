@@ -2580,8 +2580,49 @@ async function selectElementInScene(modelId: string, expressId: number): Promise
     const model = fragments.list.get(modelId);
     if (!model) return;
     
-    // Usa o highlighter para selecionar o elemento
+    // Limpa a seleção anterior
     highlighter.clear("select");
+    
+    // Destaca o elemento no modelo 3D usando o highlighter
+    // O highlighter espera um mapa: { [modelId]: Set<expressId> }
+    highlighter.highlightByID("select", { [modelId]: new Set([expressId]) });
+    
+    // Obtém a bounding box do elemento para focar a câmera
+    try {
+      const bbox = await model.getMergedBox([expressId]);
+      
+      if (!bbox.isEmpty()) {
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        
+        // Calcula distância apropriada baseada no tamanho do elemento
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const distance = Math.max(maxDim * 2.5, 5); // Distância mínima de 5 unidades
+        
+        // Calcula a posição da câmera mantendo a direção atual
+        const currentPos = new THREE.Vector3();
+        world.camera.three.getWorldPosition(currentPos);
+        const currentTarget = new THREE.Vector3();
+        world.camera.controls.getTarget(currentTarget);
+        
+        // Vetor de direção da câmera para o alvo
+        const direction = new THREE.Vector3().subVectors(currentPos, currentTarget).normalize();
+        
+        // Nova posição da câmera em relação ao elemento
+        const newCameraPos = new THREE.Vector3().addVectors(center, direction.multiplyScalar(distance));
+        
+        // Move a câmera suavemente
+        await world.camera.controls.setLookAt(
+          newCameraPos.x, newCameraPos.y, newCameraPos.z,
+          center.x, center.y, center.z,
+          true
+        );
+      }
+    } catch (boxError) {
+      console.warn("Não foi possível focar a câmera no elemento:", boxError);
+    }
     
     // Dispara as propriedades manualmente
     const propertiesHtml = await displayElementProperties(modelId, [expressId]);

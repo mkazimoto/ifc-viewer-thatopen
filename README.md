@@ -2,6 +2,12 @@
 
 Visualizador IFC moderno e interativo construído com ThatOpen Components, Three.js e Vite.
 
+https://github.com/thatopen
+
+<img width="1920" height="1032" alt="screenshot1" src="https://github.com/user-attachments/assets/16ee249b-dc62-4552-b572-6645a72e077c" />
+
+<img width="1920" height="1032" alt="screenshot2" src="https://github.com/user-attachments/assets/9c0bc211-9295-4f74-a003-c89680388e53" />
+
 ## 📋 Pré-requisitos
 
 - Node.js (versão 16 ou superior)

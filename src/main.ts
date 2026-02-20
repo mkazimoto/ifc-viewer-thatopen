@@ -1744,7 +1744,7 @@ function createPanel(): BUI.Panel {
       </div>
     </bim-panel-section>
 
-    <bim-panel-section label="🌳 Estrutura IFC" collapsed>
+    <bim-panel-section label="🧊 Estrutura IFC" collapsed>
       <bim-button 
         id="toggle-tree-btn"
         label="Abrir Árvore de Estrutura" 
@@ -2141,7 +2141,7 @@ const ifcTreePanel = document.createElement("div");
 ifcTreePanel.id = "ifc-tree-panel";
 ifcTreePanel.innerHTML = `
   <div class="tree-panel-header">
-    <span>🏗️ Estrutura IFC</span>
+    <span>🧊 Estrutura IFC</span>
     <button class="tree-panel-close" title="Fechar painel">✕</button>
   </div>
   <div class="tree-panel-search">
@@ -2161,7 +2161,7 @@ const selectionInfo = document.createElement("div");
 selectionInfo.id = "selection-info";
 selectionInfo.innerHTML = `
   <div class="props-header">
-    <span>🎯 Propriedades</span>
+    <span>🔍Propriedades do objeto</span>
   </div>
   <div class="props-content">
     <div class="props-empty">Selecione um elemento</div>
@@ -2301,7 +2301,7 @@ async function buildIfcTree(): Promise<void> {
     treeContent.innerHTML = '';
     
     for (const [modelId, model] of modelEntries) {
-      const modelNode = createTreeNode(`📄 ${modelId || 'Modelo'}`, "model");
+      const modelNode = createTreeNode(`📄 Arquivo: ${modelId || 'Modelo'}`, "model");
       treeContent.appendChild(modelNode);
       const modelChildren = modelNode.querySelector(".tree-children") as HTMLElement;
       
@@ -2315,14 +2315,14 @@ async function buildIfcTree(): Promise<void> {
         for (let i = 0; i < projectData.length; i++) {
           const proj = projectData[i];
           const projName = getAttrValue(proj, "Name") || "IfcProject";
-          const projNode = createTreeNode(`🏛️ ${projName}`, "project");
+          const projNode = createTreeNode(`🏛️ Projeto: ${projName}`, "project");
           modelChildren.appendChild(projNode);
           const projChildren = projNode.querySelector(".tree-children") as HTMLElement;
           
           // 2. IfcSite
-          await buildCategoryLevel(model, modelId, /IFCSITE/, "🌍", "site", projChildren, async (siteChildren) => {
+          await buildCategoryLevel(model, modelId, /IFCSITE/, "🌄 Terreno:", "site", projChildren, async (siteChildren) => {
             // 3. IfcBuilding
-            await buildCategoryLevel(model, modelId, /IFCBUILDING$/, "🏢", "building", siteChildren, async (buildingChildren) => {
+            await buildCategoryLevel(model, modelId, /IFCBUILDING$/, "🏢 Construção:", "building", siteChildren, async (buildingChildren) => {
               // 4. IfcBuildingStorey
               await buildStoreyLevel(model, modelId, buildingChildren);
             });
@@ -2420,7 +2420,7 @@ async function buildStoreyLevel(
   
   for (const storey of storeyList) {
     const elevStr = storey.elevation.toFixed(2);
-    const storeyNode = createTreeNode(`🏢 ${storey.name} (${elevStr}m)`, "storey");
+    const storeyNode = createTreeNode(`👣 Andar: ${storey.name} (${elevStr}m)`, "storey");
     storeyNode.querySelector(".tree-label")?.classList.add("storey-label");
     parentContainer.appendChild(storeyNode);
     
@@ -2643,13 +2643,29 @@ function getCategoryIcon(category: string): string {
 }
 
 function cleanCategoryName(name: string): string {
-  // Remove o prefixo IFC e formata: IFCWALL → Wall
-  return name
-    .replace(/^IFC/i, "")
-    .replace(/STANDARDCASE$/i, "")
-    .replace(/TYPE$/i, "")
-    .replace(/([A-Z])/g, " $1")
-    .trim();
+  const cat = name.toUpperCase();
+  if (cat.includes("WALLSTANDARDCASE")) return "Parede Padrão";
+  if (cat.includes("WALL")) return "Parede";
+  if (cat.includes("CURTAINWALL")) return "Cortina";
+  if (cat.includes("SLAB")) return "Laje";
+  if (cat.includes("FLOOR")) return "Piso";
+  if (cat.includes("ROOF")) return "Telhado";
+  if (cat.includes("COLUMN")) return "Coluna";
+  if (cat.includes("BEAM")) return "Viga";
+  if (cat.includes("DOOR")) return "Porta";
+  if (cat.includes("WINDOW")) return "Janela";
+  if (cat.includes("STAIR")) return "Escada";
+  if (cat.includes("RAILING")) return "Corrimão";
+  if (cat.includes("FURNISH")) return "Mobiliário";
+  if (cat.includes("SPACE")) return "Espaço";
+  if (cat.includes("COVERING")) return "Cobertura";
+  if (cat.includes("PIPE")) return "Tubulação";
+  if (cat.includes("DUCT")) return "Duto";
+  if (cat.includes("PROXY")) return "Procurador";
+  if (cat.includes("PLATE")) return "Placa";
+  if (cat.includes("MEMBER")) return "Membro";
+  if (cat.includes("OPENING")) return "Abertura";
+  return cat;
 }
 
 // Aplica transparência de 20% a todos os elementos do modelo

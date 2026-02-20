@@ -2830,7 +2830,7 @@ async function displayElementProperties(modelId: string, expressIds: number[]): 
     const itemsData = await model.getItemsData(expressIds, {
       relations: {
         IsDefinedBy: { attributes: true, relations: true },
-        IsTypedBy: { attributes: true, relations: false },
+        IsTypedBy: { attributes: true, relations: true },
         HasPropertySets: { attributes: true, relations: true },
       },
     });

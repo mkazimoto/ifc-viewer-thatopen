@@ -1617,7 +1617,7 @@ function createPanel(): BUI.Panel {
   panel.className = "options-menu";
 
   panel.innerHTML = `
-    <bim-panel-section label="📋 Modelos" collapsed>
+    <bim-panel-section label="📋 Modelos">
       <bim-label>Selecione um arquivo IFC:</bim-label>
       
       <input 
@@ -1656,7 +1656,7 @@ function createPanel(): BUI.Panel {
       </bim-button>
     </bim-panel-section>
 
-    <bim-panel-section label="📷 Câmera" collapsed>
+    <bim-panel-section label="📷 Câmera">
       <bim-button 
         id="perspective-btn"
         label="Perspectiva" 
@@ -1683,7 +1683,7 @@ function createPanel(): BUI.Panel {
       </bim-button>
     </bim-panel-section>
 
-    <bim-panel-section label="🏢 Plantas de Andares" collapsed>
+    <bim-panel-section label="🏢 Plantas de Andares">
       <bim-label>Selecione um andar:</bim-label>
       
       <select 
@@ -1700,7 +1700,7 @@ function createPanel(): BUI.Panel {
       </bim-button>
     </bim-panel-section>
 
-    <bim-panel-section label="� Nível da Grade" collapsed>
+    <bim-panel-section label="� Nível da Grade">
       <bim-label>Mover grade para um nível:</bim-label>
       
       <select 
@@ -1724,7 +1724,7 @@ function createPanel(): BUI.Panel {
       </bim-color-input>
     </bim-panel-section>
 
-    <bim-panel-section label="�🔍 Filtro por Andar" collapsed>
+    <bim-panel-section label="�🔍 Filtro por Andar">
       <div style="display: flex; gap: 8px; margin-bottom: 8px;">
         <bim-button id="select-all-storeys" label="Todos" icon="mdi:check-all" style="flex:1"></bim-button>
         <bim-button id="deselect-all-storeys" label="Nenhum" icon="mdi:close" style="flex:1"></bim-button>
@@ -1734,7 +1734,7 @@ function createPanel(): BUI.Panel {
       </div>
     </bim-panel-section>
 
-    <bim-panel-section label="🏗️ Filtro por Tipo" collapsed>
+    <bim-panel-section label="🏗️ Filtro por Tipo">
       <div style="display: flex; gap: 8px; margin-bottom: 8px;">
         <bim-button id="select-all-categories" label="Todos" icon="mdi:check-all" style="flex:1"></bim-button>
         <bim-button id="deselect-all-categories" label="Nenhum" icon="mdi:close" style="flex:1"></bim-button>
@@ -1744,15 +1744,7 @@ function createPanel(): BUI.Panel {
       </div>
     </bim-panel-section>
 
-    <bim-panel-section label="🧊 Estrutura IFC" collapsed>
-      <bim-button 
-        id="toggle-tree-btn"
-        label="Abrir Árvore de Estrutura" 
-        icon="mdi:file-tree">
-      </bim-button>
-    </bim-panel-section>
-
-    <bim-panel-section label="✂️ Planos de Corte" collapsed>
+    <bim-panel-section label="✂️ Planos de Corte">
       <bim-button 
         id="create-box-btn"
         label="Criar Caixa de Corte" 
@@ -1779,7 +1771,7 @@ function createPanel(): BUI.Panel {
       </bim-label>
     </bim-panel-section>
 
-    <bim-panel-section label="🔧 Ações" collapsed>
+    <bim-panel-section label="🔧 Ações">
       <bim-button 
         id="download-btn"
         label="Baixar Fragments" 
@@ -1896,23 +1888,7 @@ function createPanel(): BUI.Panel {
 const panel = createPanel();
 document.body.append(panel);
 
-// Comportamento de accordion - apenas uma seção aberta por vez
-const panelSections = panel.querySelectorAll("bim-panel-section");
-panelSections.forEach((section) => {
-  section.addEventListener("click", (e) => {
-    const target = e.currentTarget as BUI.PanelSection;
-    
-    // Se a seção clicada está sendo aberta (não tem o atributo collapsed)
-    if (!target.hasAttribute("collapsed")) {
-      // Fecha todas as outras seções
-      panelSections.forEach((otherSection) => {
-        if (otherSection !== target && !otherSection.hasAttribute("collapsed")) {
-          otherSection.setAttribute("collapsed", "");
-        }
-      });
-    }
-  });
-});
+
 
 // Botão para toggle do menu em mobile
 const menuButton = document.createElement("bim-button") as BUI.Button;

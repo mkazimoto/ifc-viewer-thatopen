@@ -24,8 +24,12 @@ html, body {
   right: 10px;
   z-index: 1000;
   width: 320px;
-  max-height: calc(100vh - 20px);
+  min-width: 200px;
+  max-width: 600px;
+  height: calc(100vh - 20px);
+  min-height: 200px;
   overflow-y: auto;
+  overflow-x: visible;
   background: rgba(26, 35, 126, 0.55);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -156,7 +160,10 @@ html, body {
   top: 10px;
   left: 10px;
   width: 380px;
+  min-width: 200px;
+  max-width: 600px;
   height: calc(100vh - 30px);
+  min-height: 200px;
   background: rgba(26, 35, 126, 0.55);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -410,6 +417,48 @@ html, body {
     width: auto;
     height: 70vh;
   }
+}
+
+/* Handles de redimensionamento dos painéis */
+.panel-resize-handle {
+  position: absolute;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.2s;
+}
+
+.panel-resize-handle-v {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.2s;
+  border-radius: 0 0 8px 8px;
+}
+
+.panel-resize-handle:hover,
+.panel-resize-handle.resizing,
+.panel-resize-handle-v:hover,
+.panel-resize-handle-v.resizing {
+  background: rgba(188, 241, 36, 0.3);
+}
+
+.options-menu .panel-resize-handle {
+  left: 0;
+  border-radius: 8px 0 0 8px;
+}
+
+#unified-left-panel .panel-resize-handle {
+  right: 0;
+  border-radius: 0 8px 8px 0;
 }
 
 /* Background Slider */

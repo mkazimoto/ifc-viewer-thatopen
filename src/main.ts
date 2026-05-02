@@ -1893,6 +1893,72 @@ function createPanel(): BUI.Panel {
 const panel = createPanel();
 document.body.append(panel);
 
+// Handle de redimensionamento do painel direito (arrasta pela borda esquerda)
+const rightPanelHandle = document.createElement("div");
+rightPanelHandle.className = "panel-resize-handle";
+panel.appendChild(rightPanelHandle);
+
+// Handle vertical do painel direito (arrasta pela borda inferior)
+const rightPanelHandleV = document.createElement("div");
+rightPanelHandleV.className = "panel-resize-handle-v";
+panel.appendChild(rightPanelHandleV);
+
+(function setupRightPanelResize() {
+  let active = false;
+  let activeV = false;
+  let startX = 0;
+  let startY = 0;
+  let startWidth = 0;
+  let startHeight = 0;
+
+  rightPanelHandle.addEventListener("mousedown", (e) => {
+    active = true;
+    startX = e.clientX;
+    startWidth = panel.offsetWidth;
+    rightPanelHandle.classList.add("resizing");
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+
+  rightPanelHandleV.addEventListener("mousedown", (e) => {
+    activeV = true;
+    startY = e.clientY;
+    startHeight = panel.offsetHeight;
+    rightPanelHandleV.classList.add("resizing");
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (active) {
+      const delta = startX - e.clientX;
+      const newWidth = Math.min(600, Math.max(200, startWidth + delta));
+      panel.style.width = `${newWidth}px`;
+    }
+    if (activeV) {
+      const delta = e.clientY - startY;
+      const newHeight = Math.min(window.innerHeight - 20, Math.max(200, startHeight + delta));
+      panel.style.height = `${newHeight}px`;
+    }
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (active) {
+      active = false;
+      rightPanelHandle.classList.remove("resizing");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    if (activeV) {
+      activeV = false;
+      rightPanelHandleV.classList.remove("resizing");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+  });
+})();
 
 
 // Botão para toggle do menu em mobile
@@ -2153,12 +2219,81 @@ selectionInfo.innerHTML = `
 unifiedPanel.appendChild(ifcTreePanel);
 unifiedPanel.appendChild(panelSplitter);
 unifiedPanel.appendChild(selectionInfo);
+
+// Handle de redimensionamento do painel esquerdo (arrasta pela borda direita)
+const leftPanelHandle = document.createElement("div");
+leftPanelHandle.className = "panel-resize-handle";
+unifiedPanel.appendChild(leftPanelHandle);
+
+// Handle vertical do painel esquerdo (arrasta pela borda inferior)
+const leftPanelHandleV = document.createElement("div");
+leftPanelHandleV.className = "panel-resize-handle-v";
+unifiedPanel.appendChild(leftPanelHandleV);
+
 document.body.appendChild(unifiedPanel);
 
 // Botão de fechar
 ifcTreePanel.querySelector(".tree-panel-close")?.addEventListener("click", () => {
   unifiedPanel.classList.remove("visible");
 });
+
+// Implementa resize horizontal e vertical do painel esquerdo
+(function setupLeftPanelResize() {
+  let active = false;
+  let activeV = false;
+  let startX = 0;
+  let startY = 0;
+  let startWidth = 0;
+  let startHeight = 0;
+
+  leftPanelHandle.addEventListener("mousedown", (e) => {
+    active = true;
+    startX = e.clientX;
+    startWidth = unifiedPanel.offsetWidth;
+    leftPanelHandle.classList.add("resizing");
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+
+  leftPanelHandleV.addEventListener("mousedown", (e) => {
+    activeV = true;
+    startY = e.clientY;
+    startHeight = unifiedPanel.offsetHeight;
+    leftPanelHandleV.classList.add("resizing");
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (active) {
+      const delta = e.clientX - startX;
+      const newWidth = Math.min(600, Math.max(200, startWidth + delta));
+      unifiedPanel.style.width = `${newWidth}px`;
+    }
+    if (activeV) {
+      const delta = e.clientY - startY;
+      const newHeight = Math.min(window.innerHeight - 20, Math.max(200, startHeight + delta));
+      unifiedPanel.style.height = `${newHeight}px`;
+    }
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (active) {
+      active = false;
+      leftPanelHandle.classList.remove("resizing");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    if (activeV) {
+      activeV = false;
+      leftPanelHandleV.classList.remove("resizing");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+  });
+})();
 
 // Implementa o comportamento do splitter
 let isResizing = false;

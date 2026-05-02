@@ -13,11 +13,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@thatopen/components": "^3.3.1",
-    "@thatopen/components-front": "^3.3.1",
-    "@thatopen/ui": "^2.4.1",
+    "@thatopen/components": "^3.4.2",
+    "@thatopen/components-front": "^3.4.2",
+    "@thatopen/fragments": "^3.4.3",
+    "@thatopen/ui": "^3.4.0",
     "stats.js": "^0.17.0",
-    "three": "^0.175.0"
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@types/stats.js": "^0.17.4",

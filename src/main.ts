@@ -32,6 +32,11 @@ if (bgSlider) {
     const value = parseInt((event.target as HTMLInputElement).value);
     const color = new THREE.Color().setRGB(value / 255, value / 255, value / 255);
     world.scene.three.background = color;
+
+    // Quanto mais escuro o fundo, mais clara a grade (cor invertida)
+    const gridBrightness = 1 - value / 255;
+    const gridIntensity = 0.2 + gridBrightness * 0.6; // varia de 0.2 (fundo branco) a 0.8 (fundo preto)
+    grid.material.uniforms.uColor.value = new THREE.Color().setRGB(gridIntensity, gridIntensity, gridIntensity + 0.1);
   });
 }
 

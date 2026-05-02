@@ -1893,6 +1893,25 @@ function createPanel(): BUI.Panel {
 const panel = createPanel();
 document.body.append(panel);
 
+// Injeta estilos nas sections (shadow DOM aberto): header mais claro, conteúdo mais escuro
+requestAnimationFrame(() => {
+  panel.querySelectorAll("bim-panel-section").forEach((section) => {
+    const shadow = (section as Element).shadowRoot;
+    if (!shadow) return;
+    const style = document.createElement("style");
+    style.textContent = `
+      .header {
+        background: rgba(55, 80, 200, 0.75) !important;
+        border-bottom: 1px solid rgba(255,255,255,0.2) !important;
+      }
+      .components {
+        background: rgba(5, 8, 45, 0.65) !important;
+      }
+    `;
+    shadow.appendChild(style);
+  });
+});
+
 // Handle de redimensionamento do painel direito (arrasta pela borda esquerda)
 const rightPanelHandle = document.createElement("div");
 rightPanelHandle.className = "panel-resize-handle";

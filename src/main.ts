@@ -2597,6 +2597,12 @@ async function buildElementsForStorey(
         ifcTreePanel.querySelectorAll(".tree-node-header.selected").forEach(h => h.classList.remove("selected"));
         header.classList.add("selected");
       });
+
+      // Duplo clique para dar zoom no elemento
+      header.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        zoomToElement(modelId, el.expressId);
+      });
       
       catChildren.appendChild(elNode);
     }
@@ -2659,6 +2665,12 @@ async function buildElementsByCategory(
         selectElementInScene(modelId, el.expressId);
         ifcTreePanel.querySelectorAll(".tree-node-header.selected").forEach(h => h.classList.remove("selected"));
         header.classList.add("selected");
+      });
+
+      // Duplo clique para dar zoom no elemento
+      header.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        zoomToElement(modelId, el.expressId);
       });
       
       catChildren.appendChild(elNode);
@@ -2818,6 +2830,34 @@ function selectElementInTreeView(modelId: string, expressId: number): void {
   console.log("🌳 Elemento selecionado na tree view: expressId " + expressId);
 }
 
+async function zoomToElement(modelId: string, expressId: number): Promise<void> {
+  const model = fragments.list.get(modelId);
+  if (!model) return;
+  try {
+    const bbox = await model.getMergedBox([expressId]);
+    if (!bbox.isEmpty()) {
+      bbox.applyMatrix4(model.object.matrixWorld);
+
+      const center = bbox.getCenter(new THREE.Vector3());
+      const size = bbox.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const distance = Math.max(maxDim * 2.5, 2);
+
+      // Posiciona a câmera num ângulo isométrico apontando para o centro do objeto
+      const offset = new THREE.Vector3(distance * 0.6, distance * 0.4, distance * 0.8);
+      const camPos = center.clone().add(offset);
+
+      await world.camera.controls.setLookAt(
+        camPos.x, camPos.y, camPos.z,
+        center.x, center.y, center.z,
+        true
+      );
+    }
+  } catch (e) {
+    console.warn("Não foi possível fazer zoom no elemento:", e);
+  }
+}
+
 async function selectElementInScene(modelId: string, expressId: number): Promise<void> {
   try {
     const model = fragments.list.get(modelId);
@@ -2834,30 +2874,6 @@ async function selectElementInScene(modelId: string, expressId: number): Promise
     // O highlighter espera um mapa: { [modelId]: Set<expressId> }
     // O elemento selecionado ficará com a cor azul escuro definida no highlighter
     await highlighter.highlightByID("select", { [modelId]: new Set([expressId]) });
-    
-    // Obtém a bounding box do elemento para focar a câmera
-    try {
-      const bbox = await model.getMergedBox([expressId]);
-      
-      if (!bbox.isEmpty()) {
-        // A bounding box vem em espaço local do modelo.
-        // Aplica a transformação do objeto (posição/rotação/escala) para world space.
-        bbox.applyMatrix4(model.object.matrixWorld);
-        
-        // Enquadra a câmera na bounding box do elemento
-        await world.camera.controls.fitToBox(bbox, true, {
-          paddingTop: 5,
-          paddingBottom: 5,
-          paddingLeft: 5,
-          paddingRight: 5,
-        });
-        
-        // Aplica zoom adicional para aproximar do objeto
-        await world.camera.controls.dolly(3, true);
-      }
-    } catch (boxError) {
-      console.warn("Não foi possível focar a câmera no elemento:", boxError);
-    }
     
     // Dispara as propriedades manualmente
     const propertiesHtml = await displayElementProperties(modelId, [expressId]);
@@ -2887,8 +2903,25 @@ async function selectElementInScene(modelId: string, expressId: number): Promise
 const highlighter = components.get(OBCF.Highlighter);
 highlighter.setup({ world });
 
-// Configura cor de seleção (azul escuro)
-highlighter.config.selectionColor = new THREE.Color(0x1a237e);
+// Configura o material de seleção: azul escuro, sem teste de profundidade (sobrepõe outros objetos)
+highlighter.config.selectMaterialDefinition = {
+  color: new THREE.Color(0x1a237e),
+  opacity: 1,
+  transparent: false,
+  renderedFaces: 1,
+  depthTest: false,
+  depthWrite: false,
+};
+
+// Aplica também ao estilo já registrado
+const selectStyle = highlighter.styles.get("select");
+if (selectStyle) {
+  selectStyle.color = new THREE.Color(0x1a237e);
+  selectStyle.opacity = 1;
+  selectStyle.transparent = false;
+  selectStyle.depthTest = false;
+  selectStyle.depthWrite = false;
+}
 
 // Ativa destaque automático ao clicar
 highlighter.config.autoHighlightOnClick = true;

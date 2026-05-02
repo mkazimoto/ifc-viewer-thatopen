@@ -26,6 +26,37 @@ html, body {
   width: 320px;
   max-height: calc(100vh - 20px);
   overflow-y: auto;
+  background: rgba(26, 35, 126, 0.95);
+  color: white;
+  border-radius: 8px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 13px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+
+  /* Sobrescreve variáveis internas do bim-panel (shadow DOM herda custom properties) */
+  --bim-ui_bg-base:         #0d1250;
+  --bim-ui_bg-contrast-10:  #111860;
+  --bim-ui_bg-contrast-20:  #1a237e;
+  --bim-ui_bg-contrast-30:  #1e2882;
+  --bim-ui_bg-contrast-40:  #232d88;
+  --bim-ui_bg-contrast-50:  #283494;
+  --bim-ui_bg-contrast-60:  #2e3aa0;
+  --bim-ui_gray-0:  #0d1250;
+  --bim-ui_gray-1:  #111860;
+  --bim-ui_gray-2:  #1a237e;
+  --bim-ui_gray-3:  #1e2882;
+  --bim-ui_gray-4:  #232d88;
+  --bim-ui_gray-5:  #283494;
+  --bim-ui_gray-6:  #2e3aa0;
+  /* Texto: branco */
+  --bim-ui_gray-7:  #94a3b8;
+  --bim-ui_gray-8:  #cbd5e1;
+  --bim-ui_gray-9:  #e2e8f0;
+  --bim-ui_gray-10: #ffffff;
+  --bim-ui_bg-contrast-70:  #94a3b8;
+  --bim-ui_bg-contrast-80:  #cbd5e1;
+  --bim-ui_bg-contrast-90:  #e2e8f0;
+  --bim-ui_bg-contrast-100: #ffffff;
 }
 
 /* Estilo para telas pequenas */

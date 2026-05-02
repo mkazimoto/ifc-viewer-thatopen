@@ -116,7 +116,7 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
   frameModel(model);
   
   // Ativa transparência por padrão para o novo modelo
-  applyInitialTransparency(model);
+  await applyInitialTransparency(model);
   
   // Atualiza a lista de modelos na interface
   updateModelsList();
@@ -132,36 +132,17 @@ fragments.list.onItemSet.add(async ({ value: model }) => {
 });
 
 // Função para aplicar transparência inicial a um modelo recém-carregado
-function applyInitialTransparency(model: FragmentsModelType): void {
+async function applyInitialTransparency(model: FragmentsModelType): Promise<void> {
   const modelId = Array.from(fragments.list.entries()).find(([_, m]) => m === model)?.[0];
   if (!modelId) return;
   
   // Define o estado de transparência como ativado
   modelTransparencyState.set(modelId, true);
   
-  // Aplica a opacidade global ao modelo
-  model.object.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.material) {
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach((material) => {
-        if (material instanceof THREE.Material) {
-          // Armazena a opacidade original
-          if ((material as any)._originalOpacity === undefined) {
-            (material as any)._originalOpacity = material.opacity;
-            (material as any)._originalTransparent = material.transparent;
-            (material as any)._originalDepthWrite = material.depthWrite;
-          }
-          
-          if (globalModelOpacity < 1) {
-            material.transparent = true;
-            material.opacity = globalModelOpacity * ((material as any)._originalOpacity || 1);
-            material.depthWrite = false; // Melhora renderização de transparência
-          }
-          material.needsUpdate = true;
-        }
-      });
-    }
-  });
+  // Aplica a opacidade global ao modelo usando a API nativa do fragments
+  if (globalModelOpacity < 1) {
+    await model.setOpacity(undefined, globalModelOpacity);
+  }
 }
 
 // Função para ajustar o modelo ao nível 0 padrão
@@ -580,6 +561,9 @@ const modelTransparencyState = new Map<string, boolean>();
 // Valor global de opacidade para todos os modelos (0 a 1)
 let globalModelOpacity = 0.1;
 
+// Rastreia os elementos atualmente selecionados (para mantê-los opacos durante transparência)
+let currentSelectionByModel: Record<string, number[]> = {};
+
 function updateModelsList(): void {
   const modelsList = document.getElementById("models-list");
   if (!modelsList) return;
@@ -663,40 +647,23 @@ function toggleModelVisibility(modelId: string, visible: boolean): void {
 }
 
 // Alterna a transparência de um modelo específico
-function toggleModelTransparency(modelId: string, index: number): void {
+async function toggleModelTransparency(modelId: string, index: number): Promise<void> {
   const model = fragments.list.get(modelId);
   
   if (model) {
     const isCurrentlyTransparent = modelTransparencyState.get(modelId) === true;
     const newTransparentState = !isCurrentlyTransparent;
     
-    model.object.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((material) => {
-          if (material instanceof THREE.Material) {
-            // Armazena a opacidade original se não existir
-            if ((material as any)._originalOpacity === undefined) {
-              (material as any)._originalOpacity = material.opacity;
-              (material as any)._originalTransparent = material.transparent;
-              (material as any)._originalDepthWrite = material.depthWrite;
-            }
-            
-            if (newTransparentState && globalModelOpacity < 1) {
-              material.transparent = true;
-              material.opacity = globalModelOpacity * ((material as any)._originalOpacity || 1);
-              material.depthWrite = false; // Melhora renderização de transparência
-            } else {
-              // Restaura para o estado original
-              material.opacity = (material as any)._originalOpacity || 1;
-              material.transparent = (material as any)._originalTransparent || false;
-              material.depthWrite = (material as any)._originalDepthWrite ?? true;
-            }
-            material.needsUpdate = true;
-          }
-        });
+    if (newTransparentState && globalModelOpacity < 1) {
+      await model.setOpacity(undefined, globalModelOpacity);
+      // Mantém itens selecionados opacos
+      const selectedIds = currentSelectionByModel[modelId];
+      if (selectedIds && selectedIds.length > 0) {
+        await model.resetOpacity(selectedIds);
       }
-    });
+    } else {
+      await model.resetOpacity(undefined);
+    }
     
     modelTransparencyState.set(modelId, newTransparentState);
     
@@ -713,45 +680,26 @@ function toggleModelTransparency(modelId: string, index: number): void {
 }
 
 // Aplica a opacidade global apenas aos modelos com transparência ativada
-function setGlobalOpacity(opacity: number): void {
+async function setGlobalOpacity(opacity: number): Promise<void> {
   globalModelOpacity = opacity;
   
-  const modelEntries = Array.from(fragments.list.entries());
-  
-  modelEntries.forEach(([modelId, model]) => {
+  for (const [modelId, model] of fragments.list) {
     const isTransparent = modelTransparencyState.get(modelId) === true;
     
     // Só aplica a opacidade se o modelo estiver com transparência ativada
-    if (!isTransparent) return;
+    if (!isTransparent) continue;
     
-    model.object.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((material) => {
-          if (material instanceof THREE.Material) {
-            // Armazena a opacidade original se não existir
-            if ((material as any)._originalOpacity === undefined) {
-              (material as any)._originalOpacity = material.opacity;
-              (material as any)._originalTransparent = material.transparent;
-              (material as any)._originalDepthWrite = material.depthWrite;
-            }
-            
-            if (opacity < 1) {
-              material.transparent = true;
-              material.opacity = opacity * ((material as any)._originalOpacity || 1);
-              material.depthWrite = false; // Melhora renderização de transparência
-            } else {
-              // Restaura para o estado original
-              material.opacity = (material as any)._originalOpacity || 1;
-              material.transparent = (material as any)._originalTransparent || false;
-              material.depthWrite = (material as any)._originalDepthWrite ?? true;
-            }
-            material.needsUpdate = true;
-          }
-        });
+    if (opacity < 1) {
+      await model.setOpacity(undefined, opacity);
+      // Mantém itens selecionados opacos
+      const selectedIds = currentSelectionByModel[modelId];
+      if (selectedIds && selectedIds.length > 0) {
+        await model.resetOpacity(selectedIds);
       }
-    });
-  });
+    } else {
+      await model.resetOpacity(undefined);
+    }
+  }
   
   console.log(`Opacidade global definida para ${Math.round(opacity * 100)}%`);
 }
@@ -2803,30 +2751,18 @@ function cleanCategoryName(name: string): string {
   return cat;
 }
 
-// Aplica transparência de 20% a todos os elementos do modelo
-function applyTransparencyToAllElements(): void {
-  for (const [, model] of fragments.list) {
-    model.object.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((material: THREE.Material) => {
-          if (material instanceof THREE.Material) {
-            // Armazena a opacidade original se não existir
-            if ((material as any)._originalOpacity === undefined) {
-              (material as any)._originalOpacity = material.opacity;
-              (material as any)._originalTransparent = material.transparent;
-              (material as any)._originalDepthWrite = material.depthWrite;
-            }
-            
-            // Aplica 20% de opacidade
-            material.transparent = true;
-            material.opacity = 0.2;
-            material.depthWrite = false;
-            material.needsUpdate = true;
-          }
-        });
-      }
-    });
+// Aplica transparência de 20% a todos os elementos, exceto os selecionados
+async function applyTransparencyToAllElements(excludeByModel: Record<string, number[]> = {}): Promise<void> {
+  for (const [modelId, model] of fragments.list) {
+    await model.setOpacity(undefined, 0.2);
+    const excludeIds = excludeByModel[modelId];
+    if (excludeIds && excludeIds.length > 0) {
+      await model.resetOpacity(excludeIds);
+    }
+  }
+  // Restaura as cores de seleção que podem ter sido afetadas pelas operações de opacidade
+  if (highlighter) {
+    await highlighter.updateColors();
   }
 }
 
@@ -2887,16 +2823,17 @@ async function selectElementInScene(modelId: string, expressId: number): Promise
     const model = fragments.list.get(modelId);
     if (!model) return;
     
-    // Aplica 20% de opacidade a todos os elementos
-    applyTransparencyToAllElements();
+    // Aplica 20% de opacidade a todos os elementos, exceto o selecionado
+    currentSelectionByModel = { [modelId]: [expressId] };
+    await applyTransparencyToAllElements(currentSelectionByModel);
     
     // Limpa a seleção anterior
-    highlighter.clear("select");
+    await highlighter.clear("select");
     
     // Destaca o elemento no modelo 3D usando o highlighter
     // O highlighter espera um mapa: { [modelId]: Set<expressId> }
     // O elemento selecionado ficará com a cor azul escuro definida no highlighter
-    highlighter.highlightByID("select", { [modelId]: new Set([expressId]) });
+    await highlighter.highlightByID("select", { [modelId]: new Set([expressId]) });
     
     // Obtém a bounding box do elemento para focar a câmera
     try {
@@ -3111,8 +3048,12 @@ highlighter.events.select.onHighlight.add(async (data) => {
     return;
   }
   
-  // Aplica 20% de opacidade a todos os elementos
-  applyTransparencyToAllElements();
+  // Atualiza a seleção atual e aplica 20% de opacidade, exceto nos selecionados
+  currentSelectionByModel = {};
+  for (const modelId of visibleModelIds) {
+    currentSelectionByModel[modelId] = Array.from(data[modelId]);
+  }
+  await applyTransparencyToAllElements(currentSelectionByModel);
   
   // Mostra loading
   let propsContentEl = selectionInfo.querySelector(".props-content");
@@ -3159,25 +3100,18 @@ highlighter.events.select.onHighlight.add(async (data) => {
 });
 
 // Evento quando a seleção é limpa
-highlighter.events.select.onClear.add(() => {
+highlighter.events.select.onClear.add(async () => {
   console.log("❌ Seleção limpa");
   
-  // Restaura opacidade normal de todos os elementos
-  for (const [, model] of fragments.list) {
-    model.object.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((material) => {
-          if (material instanceof THREE.Material) {
-            // Restaura opacidade original
-            material.opacity = (material as any)._originalOpacity || 1;
-            material.transparent = (material as any)._originalTransparent || false;
-            material.depthWrite = (material as any)._originalDepthWrite ?? true;
-            material.needsUpdate = true;
-          }
-        });
-      }
-    });
+  // Restaura opacidade de todos os elementos
+  currentSelectionByModel = {};
+  for (const [modelId, model] of fragments.list) {
+    await model.resetOpacity(undefined);
+    // Re-aplica opacidade global se o modelo estiver com transparência ativada
+    const isTransparent = modelTransparencyState.get(modelId) === true;
+    if (isTransparent && globalModelOpacity < 1) {
+      await model.setOpacity(undefined, globalModelOpacity);
+    }
   }
   
   const propsContent = selectionInfo.querySelector(".props-content");
